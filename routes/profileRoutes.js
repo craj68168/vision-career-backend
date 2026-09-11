@@ -2,7 +2,7 @@ const express = require("express");
 const {
   getProfile,
   updateProfile,
-} = require("../controllers/profileController");
+} = require("../controllers/providers/profileController");
 
 const authMiddleware = require("../middleware/authMiddleware");
 
