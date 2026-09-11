@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Profile = require("../models/profileSchema");
+const Profile = require("../models/providers/profileSchema");
 
 const REQUIRED_FIELDS = [
   { field: "company_name", label: "Company Name" },
