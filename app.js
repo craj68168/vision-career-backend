@@ -7,6 +7,13 @@ const profileRoutes = require(
   "./routes/providers/profileRoutes",
 );
 
+const seekerAuthRoutes = require(
+  "./routes/seekers/authRoutes",
+);
+
+const seekerProfileRoutes = require(
+  "./routes/seekers/profileRoutes",
+);
 
 
 const app = express();
@@ -34,6 +41,15 @@ app.get("/", (req, res) => {
 // Existing provider profile routes
 app.use("/api/profile", profileRoutes);
 
+app.use(
+  "/api/seekers/auth",
+  seekerAuthRoutes,
+);
+
+app.use(
+  "/api/seekers/profile",
+  seekerProfileRoutes,
+);
 
 
 // Not-found handler
