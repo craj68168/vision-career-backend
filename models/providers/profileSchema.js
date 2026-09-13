@@ -1,14 +1,13 @@
 const mongoose = require("mongoose");
 
-const phoneRegex = /^[\d\s\-+()]+$/;
+const phoneRegex = /^[0-9+\-()\s]{7,20}$/;
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const websiteRegex = /^https?:\/\/.+/i;
 
 const profileSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // Change to "ClientCompany" if that is your user model
+    registerId: {
+      type: String,
       required: true,
       unique: true,
       index: true,
@@ -18,15 +17,12 @@ const profileSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
-      maxlength: 100,
     },
 
     company_name: {
       type: String,
       trim: true,
       default: null,
-      minlength: 2,
-      maxlength: 100,
     },
 
     email: {
@@ -34,22 +30,20 @@ const profileSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       default: "",
-      match: [emailRegex, "Please enter a valid email address"],
+      match: [emailRegex, "Invalid email"],
     },
 
     phone: {
       type: String,
       trim: true,
       default: null,
-      match: [phoneRegex, "Please enter a valid phone number"],
+      match: [phoneRegex, "Invalid phone"],
     },
 
     address: {
       type: String,
       trim: true,
       default: null,
-      minlength: 5,
-      maxlength: 500,
     },
 
     website: {
@@ -57,10 +51,8 @@ const profileSchema = new mongoose.Schema(
       trim: true,
       default: null,
       validate: {
-        validator(value) {
-          return !value || websiteRegex.test(value);
-        },
-        message: "Website must include http:// or https://",
+        validator: (v) => !v || websiteRegex.test(v),
+        message: "Website must start with http:// or https://",
       },
     },
 
@@ -68,22 +60,19 @@ const profileSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: null,
-      maxlength: 100,
     },
 
     contact_person: {
       type: String,
       trim: true,
       default: null,
-      minlength: 2,
-      maxlength: 100,
     },
 
     contact_person_phone: {
       type: String,
       trim: true,
       default: null,
-      match: [phoneRegex, "Please enter a valid contact person phone"],
+      match: [phoneRegex, "Invalid phone"],
     },
 
     contact_person_email: {
@@ -91,21 +80,19 @@ const profileSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       default: null,
-      match: [emailRegex, "Please enter a valid contact person email"],
+      match: [emailRegex, "Invalid email"],
     },
 
     hiring_needs: {
       type: String,
       trim: true,
       default: null,
-      maxlength: 2000,
     },
 
     notes: {
       type: String,
       trim: true,
       default: null,
-      maxlength: 2000,
     },
 
     status: {
@@ -116,7 +103,7 @@ const profileSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 module.exports = mongoose.model("Profile", profileSchema);

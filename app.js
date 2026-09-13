@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 require("dotenv").config();
+const registerRoutes = require("./routes/providers/registerRoutes");
 
 const profileRoutes = require(
   "./routes/providers/profileRoutes",
@@ -39,7 +40,10 @@ app.get("/", (req, res) => {
 });
 
 // Existing provider profile routes
-app.use("/api/profile", profileRoutes);
+app.use("/api/auth", registerRoutes);
+app.use("/api/providers", profileRoutes);
+
+
 
 app.use(
   "/api/seekers/auth",
