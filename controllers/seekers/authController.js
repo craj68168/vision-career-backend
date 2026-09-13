@@ -1,7 +1,16 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 const Seeker = require("../../models/seekers/seekerSchema");
+
+// ======================================================
+// GENERATE SEEKER ID
+// ======================================================
+
+const generateSeekerId = () => {
+  return `SKR-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+};
 
 // ======================================================
 // GENERATE JWT TOKEN
@@ -10,13 +19,13 @@ const Seeker = require("../../models/seekers/seekerSchema");
 const generateToken = (seekerId) => {
   return jwt.sign(
     {
-      id: seekerId,
+      seeker_id: seekerId,
       role: "seeker",
     },
     process.env.JWT_SECRET,
     {
       expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-    }
+    },
   );
 };
 
@@ -90,22 +99,24 @@ exports.register = async (req, res) => {
     // --------------------------------------------------
 
     const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    const hashedPassword = await bcrypt.hash(
-      password,
-      salt
-    );
+    // --------------------------------------------------
+    // Generate custom seeker ID
+    // --------------------------------------------------
+
+    const seekerId = generateSeekerId();
 
     // --------------------------------------------------
     // Create seeker
     // --------------------------------------------------
 
     const seeker = await Seeker.create({
+      seeker_id: seekerId,
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
 
-      // New seekers require admin approval
       approval_status: "pending",
       account_status: "inactive",
     });
@@ -121,7 +132,7 @@ exports.register = async (req, res) => {
         "Registration successful. Your account is pending admin approval.",
 
       user: {
-        id: seeker._id,
+        seeker_id: seeker.seeker_id,
         name: seeker.name,
         email: seeker.email,
         approval_status: seeker.approval_status,
@@ -129,21 +140,15 @@ exports.register = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(
-      "Seeker registration error:",
-      error
-    );
+    console.error("Seeker registration error:", error);
 
-    // Duplicate MongoDB unique field error
     if (error.code === 11000) {
       return res.status(409).json({
         status: "error",
-        message:
-          "An account with this email already exists",
+        message: "An account with this email or seeker ID already exists",
       });
     }
 
-    // Mongoose validation error
     if (error.name === "ValidationError") {
       return res.status(400).json({
         status: "error",
@@ -186,9 +191,6 @@ exports.login = async (req, res) => {
 
     // --------------------------------------------------
     // Find seeker
-    //
-    // password has select:false in seekerSchema.js,
-    // therefore we explicitly include it here.
     // --------------------------------------------------
 
     const seeker = await Seeker.findOne({
@@ -196,7 +198,7 @@ exports.login = async (req, res) => {
     }).select("+password");
 
     // --------------------------------------------------
-    // Email doesn't exist
+    // Invalid email
     // --------------------------------------------------
 
     if (!seeker) {
@@ -212,7 +214,7 @@ exports.login = async (req, res) => {
 
     const passwordMatches = await bcrypt.compare(
       password,
-      seeker.password
+      seeker.password,
     );
 
     if (!passwordMatches) {
@@ -223,7 +225,7 @@ exports.login = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // Check approval status
+    // Pending approval
     // --------------------------------------------------
 
     if (seeker.approval_status === "pending") {
@@ -234,13 +236,11 @@ exports.login = async (req, res) => {
           "Your account is waiting for admin approval.",
 
         user: {
-          id: seeker._id,
+          seeker_id: seeker.seeker_id,
           name: seeker.name,
           email: seeker.email,
-          approval_status:
-            seeker.approval_status,
-          account_status:
-            seeker.account_status,
+          approval_status: seeker.approval_status,
+          account_status: seeker.account_status,
         },
       });
     }
@@ -289,9 +289,7 @@ exports.login = async (req, res) => {
     // Generate JWT token
     // --------------------------------------------------
 
-    const token = generateToken(
-      seeker._id.toString()
-    );
+    const token = generateToken(seeker.seeker_id);
 
     // --------------------------------------------------
     // Login success
@@ -304,20 +302,15 @@ exports.login = async (req, res) => {
       token,
 
       user: {
-        id: seeker._id,
+        seeker_id: seeker.seeker_id,
         name: seeker.name,
         email: seeker.email,
-        approval_status:
-          seeker.approval_status,
-        account_status:
-          seeker.account_status,
+        approval_status: seeker.approval_status,
+        account_status: seeker.account_status,
       },
     });
   } catch (error) {
-    console.error(
-      "Seeker login error:",
-      error
-    );
+    console.error("Seeker login error:", error);
 
     return res.status(500).json({
       status: "error",

@@ -1,68 +1,98 @@
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 
-// 📁 Ensure uploads folder exists
-const uploadPath = "uploads/";
+// ======================================================
+// UPLOAD DIRECTORY
+// ======================================================
+
+const uploadPath = path.join(__dirname, "../uploads");
 
 if (!fs.existsSync(uploadPath)) {
-  fs.mkdirSync(uploadPath);
+  fs.mkdirSync(uploadPath, {
+    recursive: true,
+  });
 }
 
-// 📦 Storage engine
+// ======================================================
+// STORAGE
+// ======================================================
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadPath);
   },
 
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    const extension = path.extname(file.originalname).toLowerCase();
+
+    const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${extension}`;
+
+    cb(null, uniqueName);
   },
 });
 
-// 🔍 File filter (safe + flexible)
+// ======================================================
+// ALLOWED FILES
+// ======================================================
+
+const allowedMimeTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+
+const allowedExtensions = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".pdf",
+  ".doc",
+  ".docx",
+];
+
+// ======================================================
+// FILE FILTER
+// ======================================================
+
 const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = [
-    // Images
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/gif",
-    "image/webp",
+  const extension = path.extname(file.originalname).toLowerCase();
 
-    // PDF
-    "application/pdf",
+  const mimeAllowed = allowedMimeTypes.includes(file.mimetype);
 
-    // Word docs
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  const extensionAllowed =
+    allowedExtensions.includes(extension);
 
-    // fallback (some tools like Postman send this)
-    "application/octet-stream",
-  ];
-
-  const allowedExtensions = /jpeg|jpg|png|gif|webp|pdf|doc|docx/;
-
-  const extName = allowedExtensions.test(
-    path.extname(file.originalname).toLowerCase()
-  );
-
-  const mimeOk = allowedMimeTypes.includes(file.mimetype);
-
-  if (mimeOk || extName) {
-    cb(null, true);
-  } else {
-    console.log("❌ Rejected file:", file.originalname, file.mimetype);
-    cb(new Error("Only images, PDFs, DOC, DOCX are allowed"), false);
+  if (mimeAllowed && extensionAllowed) {
+    return cb(null, true);
   }
+
+  return cb(
+    new Error(
+      "Only JPG, JPEG, PNG, GIF, WEBP, PDF, DOC and DOCX files are allowed",
+    ),
+    false,
+  );
 };
 
-// ⚙️ Multer config
+// ======================================================
+// MULTER
+// ======================================================
+
 const upload = multer({
   storage,
+
   fileFilter,
+
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: 10 * 1024 * 1024,
   },
 });
 

@@ -3,9 +3,12 @@ const express = require("express");
 const {
   getProfile,
   updateProfile,
+  uploadResume,
 } = require("../../controllers/seekers/profileController");
 
 const seekerAuth = require("../../middleware/seekerAuth");
+const upload = require("../../middleware/upload");
+
 
 const router = express.Router();
 
@@ -22,5 +25,8 @@ router.get("/", seekerAuth, getProfile);
 // ======================================================
 
 router.patch("/", seekerAuth, updateProfile);
+
+// Upload resume
+router.post("/resume", seekerAuth, upload.single("resume"), uploadResume);
 
 module.exports = router;
