@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const path = require("path");
 
 require("dotenv").config();
+const registerRoutes = require("./routes/providers/registerRoutes");
 
 const profileRoutes = require(
   "./routes/providers/profileRoutes",
@@ -70,6 +71,11 @@ app.use(
 // ======================================================
 // SEEKER AUTH ROUTES
 // ======================================================
+// Existing provider profile routes
+app.use("/api/auth", registerRoutes);
+app.use("/api/providers", profileRoutes);
+
+
 
 app.use(
   "/api/seekers/auth",
