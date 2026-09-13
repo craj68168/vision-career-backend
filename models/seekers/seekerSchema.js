@@ -128,7 +128,6 @@ const seekerSchema = new mongoose.Schema(
       required: true,
       unique: true,
       immutable: true,
-      index: true,
     },
 
     name: {
