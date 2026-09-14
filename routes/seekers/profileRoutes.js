@@ -6,6 +6,7 @@ const {
 } = require("../../controllers/seekers/profileController");
 
 const seekerAuth = require("../../middleware/seekerAuth");
+const upload = require("../../middleware/upload");
 
 const router = express.Router();
 
@@ -17,10 +18,32 @@ const router = express.Router();
 router.get("/", seekerAuth, getProfile);
 
 // ======================================================
-// UPDATE LOGGED-IN SEEKER PROFILE
+// UPDATE COMPLETE SEEKER PROFILE
 // PATCH /api/seekers/profile
+//
+// Supports:
+// - Normal profile fields
+// - Profile photo
+// - Resume
 // ======================================================
 
-router.patch("/", seekerAuth, updateProfile);
-
+router.patch(
+  "/",
+  seekerAuth,
+  upload.fields([
+    {
+      name: "profile_photo",
+      maxCount: 1,
+    },
+    {
+      name: "resume",
+      maxCount: 1,
+    },
+    {
+      name: "other_documents",
+      maxCount: 10,
+    },
+  ]),
+  updateProfile,
+);
 module.exports = router;
