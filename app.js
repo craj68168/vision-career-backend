@@ -18,6 +18,10 @@ const seekerProfileRoutes = require(
   "./routes/seekers/profileRoutes",
 );
 
+const seekerApplicationRoutes = require(
+  "./routes/seekers/applicationRoutes",
+);
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -59,6 +63,7 @@ app.get("/", (req, res) => {
   });
 });
 
+
 // ======================================================
 // PROVIDER ROUTES
 // ======================================================
@@ -91,6 +96,10 @@ app.use(
   seekerProfileRoutes,
 );
 
+app.use(
+  "/api/seekers/applications",
+  seekerApplicationRoutes,
+);
 // ======================================================
 // NOT FOUND
 // ======================================================
@@ -101,6 +110,7 @@ app.use((req, res) => {
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
+
 
 // ======================================================
 // GLOBAL ERROR HANDLER
@@ -121,6 +131,7 @@ app.use((error, req, res, next) => {
         "Internal server error.",
     });
 });
+
 
 // ======================================================
 // START SERVER
