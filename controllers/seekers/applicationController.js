@@ -1,15 +1,16 @@
 const crypto = require("crypto");
 
-const Application = require(
-  "../../models/applications/applicationSchema",
-);
+const fs = require("fs");
 
-const Seeker = require(
-  "../../models/seekers/seekerSchema",
-);
+const path = require("path");
+
+const Application = require("../../models/applications/applicationSchema");
+
+const Seeker = require("../../models/seekers/seekerSchema");
 
 // This will be the SAME vacancy model used by Provider/Admin.
 // Do not create a second vacancy collection.
+const Vacancy = require("../../models/providers/vacancySchema");
 
 
 // ======================================================
@@ -18,12 +19,14 @@ const Seeker = require(
 // ======================================================
 
 const generateApplicationId = () => {
-  return `APP-${crypto
-    .randomBytes(4)
-    .toString("hex")
-    .toUpperCase()}`;
+  return `APP-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 };
 
+
+const {
+  generateResumePdf,
+  APPLICATION_RESUME_DIR,
+} = require("../../services/resumeService");
 // ======================================================
 // BUILD PRIVACY-SAFE PROFESSIONAL SNAPSHOT
 // ======================================================
@@ -48,57 +51,37 @@ const buildProfileSnapshot = (seeker) => {
 
     visa_type: seeker.visa_type,
 
-    visa_expiry_date:
-      seeker.visa_expiry_date,
+    visa_expiry_date: seeker.visa_expiry_date,
 
-    japanese_level:
-      seeker.japanese_level,
+    japanese_level: seeker.japanese_level,
 
     skills: seeker.skills || [],
 
-    desired_job:
-      seeker.desired_job,
+    desired_job: seeker.desired_job,
 
-    desired_location:
-      seeker.desired_location,
+    desired_location: seeker.desired_location,
 
-    education: (
-      seeker.education || []
-    ).map((education) => ({
-      enrollment_date:
-        education.enrollment_date,
+    education: (seeker.education || []).map((education) => ({
+      enrollment_date: education.enrollment_date,
 
-      graduation_date:
-        education.graduation_date,
+      graduation_date: education.graduation_date,
 
-      school_type:
-        education.school_type,
+      school_type: education.school_type,
 
-      school:
-        education.school,
+      school: education.school,
 
-      major:
-        education.major,
+      major: education.major,
     })),
 
-    employment_history: (
-      seeker.employment_history || []
-    ).map((employment) => ({
-      start_date:
-        employment.start_date,
+    employment_history: (seeker.employment_history || []).map((employment) => ({
+      start_date: employment.start_date,
 
-      end_date:
-        employment.end_date,
+      end_date: employment.end_date,
 
-      employment_type:
-        employment.employment_type,
+      employment_type: employment.employment_type,
 
-      company_name:
-        employment.company_name,
+      company_name: employment.company_name,
     })),
-
-    generated_resume_file:
-      seeker.generated_resume_file,
   };
 };
 
@@ -107,32 +90,26 @@ const buildProfileSnapshot = (seeker) => {
 // POST /api/seekers/applications
 // ======================================================
 
-exports.applyForVacancy = async (
-  req,
-  res,
-) => {
+exports.applyForVacancy = async (req, res) => {
+  let applicationResumePath = null;
+
   try {
     // --------------------------------------------------
     // 1. Get logged-in seeker from JWT
     // --------------------------------------------------
 
-    const seekerId =
-      req.user.seeker_id;
+    const seekerId = req.user.seeker_id;
 
     // --------------------------------------------------
     // 2. Get vacancyId from frontend
     // --------------------------------------------------
 
-    const {
-      vacancyId,
-      coverLetter,
-    } = req.body;
+    const { vacancyId, coverLetter } = req.body;
 
     if (!vacancyId) {
       return res.status(400).json({
         success: false,
-        message:
-          "vacancyId is required.",
+        message: "vacancyId is required.",
       });
     }
 
@@ -140,16 +117,14 @@ exports.applyForVacancy = async (
     // 3. Confirm seeker still exists
     // --------------------------------------------------
 
-    const seeker =
-      await Seeker.findOne({
-        seeker_id: seekerId,
-      });
+    const seeker = await Seeker.findOne({
+      seeker_id: seekerId,
+    });
 
     if (!seeker) {
       return res.status(404).json({
         success: false,
-        message:
-          "Job Seeker not found.",
+        message: "Job Seeker not found.",
       });
     }
 
@@ -158,10 +133,8 @@ exports.applyForVacancy = async (
     // --------------------------------------------------
 
     if (
-      seeker.approval_status !==
-        "approved" ||
-      seeker.account_status !==
-        "active"
+      seeker.approval_status !== "approved" ||
+      seeker.account_status !== "active"
     ) {
       return res.status(403).json({
         success: false,
@@ -174,16 +147,14 @@ exports.applyForVacancy = async (
     // 5. Find selected vacancy
     // --------------------------------------------------
 
-    const vacancy =
-      await Vacancy.findOne({
-        vacancy_id: vacancyId,
-      });
+    const vacancy = await Vacancy.findOne({
+      vacancyId: vacancyId,
+    });
 
     if (!vacancy) {
       return res.status(404).json({
         success: false,
-        message:
-          "Vacancy not found.",
+        message: "Vacancy not found.",
       });
     }
 
@@ -191,31 +162,28 @@ exports.applyForVacancy = async (
     // 6. Vacancy must be published
     // --------------------------------------------------
 
-    if (
-      vacancy.status !==
-      "published"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "This vacancy is not currently available for applications.",
-      });
-    }
-
+if (
+  vacancy.status !== "published" ||
+  vacancy.isPublished !== true
+) {
+  return res.status(400).json({
+    success: false,
+    message:
+      "This vacancy is not currently available for applications.",
+  });
+}
     // --------------------------------------------------
     // 7. Get provider ID FROM VACANCY
     //
     // Never accept providerId from frontend.
     // --------------------------------------------------
 
-    const providerId =
-      vacancy.provider_id;
+    const providerId = vacancy.registerId;
 
     if (!providerId) {
       return res.status(500).json({
         success: false,
-        message:
-          "Vacancy provider information is missing.",
+        message: "Vacancy provider information is missing.",
       });
     }
 
@@ -223,17 +191,15 @@ exports.applyForVacancy = async (
     // 8. Prevent duplicate application
     // --------------------------------------------------
 
-    const existingApplication =
-      await Application.findOne({
-        seeker_id: seekerId,
-        vacancy_id: vacancyId,
-      });
+    const existingApplication = await Application.findOne({
+      seeker_id: seekerId,
+      vacancy_id: vacancyId,
+    });
 
     if (existingApplication) {
       return res.status(409).json({
         success: false,
-        message:
-          "You have already applied for this vacancy.",
+        message: "You have already applied for this vacancy.",
       });
     }
 
@@ -241,17 +207,28 @@ exports.applyForVacancy = async (
     // 9. Generate application ID
     // --------------------------------------------------
 
-    const applicationId =
-      generateApplicationId();
+    const applicationId = generateApplicationId();
+
+    // --------------------------------------------------
+    // Generate permanent application-specific resume
+    // --------------------------------------------------
+
+    const generatedResume = await generateResumePdf(seeker, {
+      type: "application",
+      applicationId,
+    });
+
+    applicationResumePath = generatedResume.absolutePath;
 
     // --------------------------------------------------
     // 10. Capture professional profile snapshot
     // --------------------------------------------------
 
-    const profileSnapshot =
-      buildProfileSnapshot(
-        seeker,
-      );
+    const profileSnapshot = buildProfileSnapshot(seeker);
+
+    // Use application-specific resume,
+    // not the seeker's temporary/latest resume
+    profileSnapshot.generated_resume_file = generatedResume.relativePath;
 
     // --------------------------------------------------
     // 11. Create application
@@ -261,32 +238,23 @@ exports.applyForVacancy = async (
     // Provider cannot see it yet.
     // --------------------------------------------------
 
-    const application =
-      await Application.create({
-        application_id:
-          applicationId,
+    const application = await Application.create({
+      application_id: applicationId,
 
-        seeker_id:
-          seekerId,
+      seeker_id: seekerId,
 
-        vacancy_id:
-          vacancy.vacancy_id,
+      vacancy_id: vacancy.vacancyId,
 
-        provider_id:
-          providerId,
+      provider_id: providerId,
 
-        cover_letter:
-          coverLetter || null,
+      cover_letter: coverLetter || null,
 
-        profile_snapshot:
-          profileSnapshot,
+      profile_snapshot: profileSnapshot,
 
-        status:
-          "PENDING_ADMIN_APPROVAL",
+      status: "PENDING_ADMIN_APPROVAL",
 
-        applied_at:
-          new Date(),
-      });
+      applied_at: new Date(),
+    });
 
     // --------------------------------------------------
     // 12. Return safe response
@@ -299,49 +267,176 @@ exports.applyForVacancy = async (
         "Application submitted successfully and is pending admin review.",
 
       data: {
-        applicationId:
-          application.application_id,
+        applicationId: application.application_id,
 
-        vacancyId:
-          application.vacancy_id,
+        vacancyId: application.vacancy_id,
 
-        status:
-          application.status,
+        status: application.status,
 
-        appliedAt:
-          application.applied_at,
+        appliedAt: application.applied_at,
       },
     });
   } catch (error) {
-    console.error(
-      "Apply for vacancy error:",
-      error,
-    );
+    console.error("Apply for vacancy error:", error);
+
+    // If PDF was generated but application creation failed,
+    // remove the orphan application resume.
+    if (applicationResumePath && fs.existsSync(applicationResumePath)) {
+      fs.unlinkSync(applicationResumePath);
+    }
 
     // Duplicate protection from MongoDB unique index
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message:
-          "You have already applied for this vacancy.",
+        message: "You have already applied for this vacancy.",
       });
     }
 
-    if (
-      error.name ===
-      "ValidationError"
-    ) {
+    if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
-        message:
-          error.message,
+        message: error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to submit application.",
+      message: "Failed to submit application.",
+    });
+  }
+};
+
+// ======================================================
+// GET LOGGED-IN SEEKER APPLICATIONS
+// GET /api/seekers/applications
+// ======================================================
+
+exports.getMyApplications = async (req, res) => {
+  try {
+    const seekerId = req.user.seeker_id;
+
+    const applications = await Application.find({
+      seeker_id: seekerId,
+    }).sort({
+      applied_at: -1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: applications.length,
+      data: applications,
+    });
+  } catch (error) {
+    console.error("Get seeker applications error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get applications.",
+    });
+  }
+};
+
+// ======================================================
+// GET ONE LOGGED-IN SEEKER APPLICATION
+// GET /api/seekers/applications/:application_id
+// ======================================================
+
+exports.getMyApplicationById = async (req, res) => {
+  try {
+    const seekerId = req.user.seeker_id;
+
+    const { application_id } = req.params;
+
+    const application = await Application.findOne({
+      application_id,
+      seeker_id: seekerId,
+    });
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Application not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: application,
+    });
+  } catch (error) {
+    console.error("Get seeker application error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get application.",
+    });
+  }
+};
+
+// ======================================================
+// VIEW RESUME ATTACHED TO APPLICATION
+// GET /api/seekers/applications/:application_id/resume
+// ======================================================
+
+exports.getMyApplicationResume = async (req, res) => {
+  try {
+    const seekerId = req.user.seeker_id;
+    const { application_id } = req.params;
+
+    // Find application AND confirm it belongs
+    // to the logged-in seeker.
+    const application = await Application.findOne({
+      application_id,
+      seeker_id: seekerId,
+    });
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Application not found.",
+      });
+    }
+
+    const resumePath = application.profile_snapshot?.generated_resume_file;
+
+    if (!resumePath) {
+      return res.status(404).json({
+        success: false,
+        message: "No resume is attached to this application.",
+      });
+    }
+
+    // Only allow application-specific resumes here.
+    if (!resumePath.startsWith("application-resumes/")) {
+      return res.status(404).json({
+        success: false,
+        message: "Application resume is not available.",
+      });
+    }
+
+    const fileName = path.basename(resumePath);
+
+    const absolutePath = path.join(APPLICATION_RESUME_DIR, fileName);
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        message: "Application resume file not found.",
+      });
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+
+    return res.sendFile(absolutePath);
+  } catch (error) {
+    console.error("Get application resume error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get application resume.",
     });
   }
 };

@@ -20,6 +20,10 @@ const seekerApplicationRoutes = require(
   "./routes/seekers/applicationRoutes",
 );
 
+const seekerResumeRoutes = require(
+  "./routes/seekers/resumeRoutes",
+);
+
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -62,6 +66,18 @@ app.get("/", (req, res) => {
 // ✅ ONLY ONE AUTH ROUTE
 app.use("/api/auth/providers", registerRoutes);
 
+// ======================================================
+// SEEKER AUTH ROUTES
+// ======================================================
+app.use(
+  "/api/seekers/resume",
+  seekerResumeRoutes,
+);
+
+app.use(
+  "/api/seekers/auth",
+  seekerAuthRoutes,
+);
 // other provider routes
 // app.use("/api/profile", profileRoutes);
 app.use("/api/providers", profileRoutes);
@@ -80,6 +96,17 @@ app.use(
   "/api/seekers/applications",
   seekerApplicationRoutes,
 );
+
+
+
+// Existing provider profile routes
+app.use("/api/auth", registerRoutes);
+app.use("/api/providers", profileRoutes);
+
+
+
+
+
 // ======================================================
 // NOT FOUND
 // ======================================================
