@@ -1,83 +1,46 @@
 const jwt = require("jsonwebtoken");
-const Provider = require("../models/providers/providerSchema");
+const Provider = require("../models/providers/registerSchema");
 
 const providerAuth = async (req, res, next) => {
   try {
-    const authorizationHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization;
 
-    if (
-      !authorizationHeader ||
-      !authorizationHeader.startsWith("Bearer ")
-    ) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
-        status: "error",
-        message: "Authentication token is required.",
+        message: "Token missing",
       });
     }
 
-    if (!process.env.JWT_SECRET) {
-      throw new Error("JWT_SECRET is not configured");
-    }
+    const token = authHeader.split(" ")[1];
 
-    const token = authorizationHeader.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+    const { providerId, registerId, role } = decoded;
 
-    if (
-      decodedToken.role !== "provider" ||
-      !decodedToken.providerId
-    ) {
+    if (role !== "provider") {
       return res.status(401).json({
-        status: "error",
-        message: "Invalid provider token.",
+        message: "Invalid role",
       });
     }
 
-    const provider = await Provider.findOne({
-      providerId: decodedToken.providerId,
-    });
+    const provider = await Provider.findOne({ providerId });
 
     if (!provider) {
-      return res.status(401).json({
-        status: "error",
-        message: "Provider account was not found.",
-      });
-    }
-
-    if (
-      provider.approval_status !== "approved" ||
-      provider.account_status !== "active"
-    ) {
-      return res.status(403).json({
-        status: "error",
-        message: "Provider account is not active.",
+      return res.status(404).json({
+        message: "Provider not found",
       });
     }
 
     req.provider = provider;
-    req.providerId = provider.providerId;
+
+    // 🔥 THIS IS WHAT YOU NEED
+    req.registerId = registerId;
+    req.providerId = providerId;
 
     next();
-  } catch (error) {
-    if (error.name === "TokenExpiredError") {
-      return res.status(401).json({
-        status: "error",
-        message: "Authentication token has expired.",
-      });
-    }
-
-    if (error.name === "JsonWebTokenError") {
-      return res.status(401).json({
-        status: "error",
-        message: "Authentication token is invalid.",
-      });
-    }
-
-    console.error("Provider authentication error:", error);
-
-    return res.status(500).json({
-      status: "error",
-      message: "Unable to authenticate provider.",
+  } catch (err) {
+    res.status(401).json({
+      message: err.message,
     });
   }
 };

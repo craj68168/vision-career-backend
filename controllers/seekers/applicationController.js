@@ -2,13 +2,15 @@ const crypto = require("crypto");
 
 const fs = require("fs");
 
+const path = require("path");
+
 const Application = require("../../models/applications/applicationSchema");
 
 const Seeker = require("../../models/seekers/seekerSchema");
 
 // This will be the SAME vacancy model used by Provider/Admin.
 // Do not create a second vacancy collection.
-const Vacancy = require("../../models/vacancies/vacancySchema");
+const Vacancy = require("../../models/providers/vacancySchema");
 
 // ======================================================
 // GENERATE CUSTOM APPLICATION ID
@@ -19,7 +21,6 @@ const generateApplicationId = () => {
   return `APP-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 };
 
-const path = require("path");
 
 const {
   generateResumePdf,
@@ -146,7 +147,7 @@ exports.applyForVacancy = async (req, res) => {
     // --------------------------------------------------
 
     const vacancy = await Vacancy.findOne({
-      vacancy_id: vacancyId,
+      vacancyId: vacancyId,
     });
 
     if (!vacancy) {
@@ -160,20 +161,23 @@ exports.applyForVacancy = async (req, res) => {
     // 6. Vacancy must be published
     // --------------------------------------------------
 
-    if (vacancy.status !== "published") {
-      return res.status(400).json({
-        success: false,
-        message: "This vacancy is not currently available for applications.",
-      });
-    }
-
+if (
+  vacancy.status !== "published" ||
+  vacancy.isPublished !== true
+) {
+  return res.status(400).json({
+    success: false,
+    message:
+      "This vacancy is not currently available for applications.",
+  });
+}
     // --------------------------------------------------
     // 7. Get provider ID FROM VACANCY
     //
     // Never accept providerId from frontend.
     // --------------------------------------------------
 
-    const providerId = vacancy.provider_id;
+    const providerId = vacancy.registerId;
 
     if (!providerId) {
       return res.status(500).json({
@@ -238,7 +242,7 @@ exports.applyForVacancy = async (req, res) => {
 
       seeker_id: seekerId,
 
-      vacancy_id: vacancy.vacancy_id,
+      vacancy_id: vacancy.vacancyId,
 
       provider_id: providerId,
 

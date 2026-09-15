@@ -1,3 +1,4 @@
 node_modules/
 .env
 private_uploads/
+.DS_Store
