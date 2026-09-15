@@ -14,6 +14,10 @@ const forgotRoutes = require("./routes/providers/forgotRoutes");
 const seekerAuthRoutes = require("./routes/seekers/authRoutes");
 const seekerProfileRoutes = require("./routes/seekers/profileRoutes");
 
+const seekerApplicationRoutes = require(
+  "./routes/seekers/applicationRoutes",
+);
+
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -48,6 +52,7 @@ app.get("/", (req, res) => {
   });
 });
 
+
 // ======================================================
 // PROVIDER ROUTES
 // ======================================================
@@ -68,6 +73,10 @@ app.use("/api/providers/vacancies", vacancyRoutes);
 app.use("/api/seekers/auth", seekerAuthRoutes);
 app.use("/api/seekers/profile", seekerProfileRoutes);
 
+app.use(
+  "/api/seekers/applications",
+  seekerApplicationRoutes,
+);
 // ======================================================
 // NOT FOUND
 // ======================================================
@@ -78,6 +87,7 @@ app.use((req, res) => {
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
+
 
 // ======================================================
 // ERROR HANDLER
@@ -91,6 +101,7 @@ app.use((err, req, res, next) => {
     message: err.message || "Internal server error",
   });
 });
+
 
 // ======================================================
 // START SERVER
