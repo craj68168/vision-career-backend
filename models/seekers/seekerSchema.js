@@ -40,7 +40,7 @@ const educationSchema = new mongoose.Schema(
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
-  }
+  },
 );
 
 // ======================================================
@@ -77,7 +77,7 @@ const employmentSchema = new mongoose.Schema(
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
-  }
+  },
 );
 
 // ======================================================
@@ -110,7 +110,7 @@ const documentSchema = new mongoose.Schema(
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
-  }
+  },
 );
 
 // ======================================================
@@ -122,6 +122,13 @@ const seekerSchema = new mongoose.Schema(
     // ==================================================
     // ACCOUNT INFORMATION
     // ==================================================
+
+    seeker_id: {
+      type: String,
+      required: true,
+      unique: true,
+      immutable: true,
+    },
 
     name: {
       type: String,
@@ -140,6 +147,40 @@ const seekerSchema = new mongoose.Schema(
     password: {
       type: String,
       required: true,
+      select: false,
+    },
+
+    // ==================================================
+    // PASSWORD RESET
+    // ==================================================
+
+    password_reset_code_hash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    password_reset_code_expires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    password_reset_attempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+
+    password_reset_token_hash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    password_reset_token_expires: {
+      type: Date,
+      default: null,
       select: false,
     },
 
@@ -308,13 +349,7 @@ const seekerSchema = new mongoose.Schema(
 
     placement_status: {
       type: String,
-      enum: [
-        "unplaced",
-        "matching",
-        "interview",
-        "selected",
-        "placed",
-      ],
+      enum: ["unplaced", "matching", "interview", "selected", "placed"],
       default: "unplaced",
     },
 
@@ -334,7 +369,7 @@ const seekerSchema = new mongoose.Schema(
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
-  }
+  },
 );
 
 // ======================================================
