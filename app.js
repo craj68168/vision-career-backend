@@ -10,6 +10,8 @@ const registerRoutes = require("./routes/providers/registerRoutes");
 const profileRoutes = require("./routes/providers/profileRoutes");
 const vacancyRoutes = require("./routes/providers/vacancyRoutes");
 const forgotRoutes = require("./routes/providers/forgotRoutes");
+const recruitRoutes = require("./routes/providers/recruitRoutes");
+
 
 const seekerAuthRoutes = require("./routes/seekers/authRoutes");
 const seekerProfileRoutes = require("./routes/seekers/profileRoutes");
@@ -64,7 +66,8 @@ app.use("/api/auth/providers", registerRoutes);
 // app.use("/api/profile", profileRoutes);
 app.use("/api/providers", profileRoutes);
 app.use("/api/auth/providers", forgotRoutes);
-app.use("/api/providers/vacancies", vacancyRoutes);
+app.use("/api/providers", vacancyRoutes);
+app.use("/api/providers", recruitRoutes);
 
 // ======================================================
 // SEEKER ROUTES

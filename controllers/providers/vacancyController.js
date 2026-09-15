@@ -1,350 +1,177 @@
 const Vacancy = require("../../models/providers/vacancySchema");
 const Register = require("../../models/providers/registerSchema");
+const Counter = require("../../models/providers/counterModel");
 
-// ==========================================
-// GENERATE VACANCY ID
-// Format: V-734643
-// ==========================================
+// ================= SERIAL VACANCY ID =================
+const generateVacancyId = async () => {
+  const counter = await Counter.findByIdAndUpdate(
+    { _id: "vacancyId" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true, returnDocument: "after" }
+  );
 
-const generateVacancyId = () => {
-  const number = Math.floor(100000 + Math.random() * 900000);
-
-  return `V-${number}`;
+  return `V-${counter.seq.toString().padStart(6, "0")}`;
 };
 
+// ================= PUBLIC FORMAT (SEEKER SAFE) =================
+const toPublicVacancy = (v) => ({
+  vacancyId: v.vacancyId,
+  title: v.title,
+  titleKana: v.titleKana,
+  employmentType: v.employmentType,
+  numberOfPeople: v.numberOfPeople,
+  jobDescription: v.jobDescription,
+  responsibilities: v.responsibilities,
+  requiredSkills: v.requiredSkills,
+  preferredSkills: v.preferredSkills,
+  requiredEducation: v.requiredEducation,
+  requiredExperience: v.requiredExperience,
+  japaneseLevel: v.japaneseLevel,
+  workLocation: v.workLocation,
+  salaryMin: v.salaryMin,
+  salaryMax: v.salaryMax,
+  status: v.status,
+});
 
-// ==========================================
-// CREATE VACANCY
-// ==========================================
-
+// ================= CREATE VACANCY =================
 exports.createVacancy = async (req, res) => {
   try {
-    const {
-      registerId,
+    const { registerId, companyName, title } = req.body;
 
-      companyName,
-      companyNameKana,
-      title,
-      titleKana,
-      employmentType,
-      numberOfPeople,
-      jobDescription,
-      responsibilities,
-      requiredSkills,
-      preferredSkills,
-      requiredEducation,
-      requiredExperience,
-      japaneseLevel,
-      workLocation,
-      workLocationDetail,
-      remoteWork,
-      salaryMin,
-      salaryMax,
-      salaryNote,
-      workHours,
-      breakTime,
-      overtime,
-      holidays,
-      benefits,
-      insurance,
-      trialPeriod,
-      applicationDeadline,
-      startDate,
-      selectionProcess,
-      contactPerson,
-      contactPersonKana,
-      contactEmail
-    } = req.body;
-
-
-    // ==========================================
-    // VALIDATION
-    // ==========================================
-
-    if (!registerId) {
+    if (!registerId || !companyName || !title) {
       return res.status(400).json({
-        message: "registerId is required"
+        message: "registerId, companyName, title required",
       });
     }
 
-    if (!companyName) {
-      return res.status(400).json({
-        message: "companyName is required"
-      });
-    }
-
-    if (!title) {
-      return res.status(400).json({
-        message: "title is required"
-      });
-    }
-
-
-    // ==========================================
-    // CHECK REGISTER
-    // ==========================================
-
-    const register = await Register.findOne({
-      registerId
-    });
-
+    const register = await Register.findOne({ registerId });
     if (!register) {
-      return res.status(404).json({
-        message: "Register not found"
-      });
+      return res.status(404).json({ message: "Register not found" });
     }
 
+    const vacancyId = await generateVacancyId();
 
-    // ==========================================
-    // GENERATE UNIQUE VACANCY ID
-    // ==========================================
-
-    let vacancyId;
-    let existingVacancy;
-
-    do {
-      vacancyId = generateVacancyId();
-
-      existingVacancy = await Vacancy.findOne({
-        vacancyId
-      });
-
-    } while (existingVacancy);
-
-
-    // ==========================================
-    // CREATE VACANCY
-    // ==========================================
+    const status =
+      Object.values(req.body).every(
+        (v) => v !== "" && v !== null && v !== undefined
+      )
+        ? "pending_review"
+        : "draft";
 
     const vacancy = await Vacancy.create({
+      ...req.body,
       vacancyId,
-
-      registerId,
-
-      companyName,
-      companyNameKana,
-      title,
-      titleKana,
-      employmentType,
-      numberOfPeople,
-      jobDescription,
-      responsibilities,
-      requiredSkills,
-      preferredSkills,
-      requiredEducation,
-      requiredExperience,
-      japaneseLevel,
-      workLocation,
-      workLocationDetail,
-      remoteWork,
-      salaryMin,
-      salaryMax,
-      salaryNote,
-      workHours,
-      breakTime,
-      overtime,
-      holidays,
-      benefits,
-      insurance,
-      trialPeriod,
-      applicationDeadline,
-      startDate,
-      selectionProcess,
-      contactPerson,
-      contactPersonKana,
-      contactEmail
+      status,
     });
 
-
-    // ==========================================
-    // RESPONSE
-    // ==========================================
-
-    return res.status(201).json({
-      message: "Vacancy created successfully",
-
-      vacancy
+    res.status(201).json({
+      message: "Vacancy created",
+      vacancy,
     });
-
-  } catch (error) {
-    console.error("Create vacancy error:", error);
-
-    return res.status(500).json({
-      message: error.message
-    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+// ================= APPROVE =================
+exports.approveVacancy = async (req, res) => {
+  const v = await Vacancy.findOneAndUpdate(
+    { vacancyId: req.params.id },
+    { status: "approved", reviewedAt: new Date() },
+    { returnDocument: "after" }
+  );
 
-// ==========================================
-// GET ALL VACANCIES
-// ==========================================
-
-exports.getVacancies = async (req, res) => {
-  try {
-    const vacancies = await Vacancy.find()
-      .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      message: "Vacancies fetched successfully",
-      count: vacancies.length,
-      vacancies
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      message: error.message
-    });
-  }
+  res.json(v);
 };
 
+// ================= REJECT =================
+exports.rejectVacancy = async (req, res) => {
+  const v = await Vacancy.findOneAndUpdate(
+    { vacancyId: req.params.id },
+    { status: "rejected" },
+    { returnDocument: "after" }
+  );
 
-// ==========================================
-// GET VACANCIES BY REGISTER ID
-// ==========================================
-
-exports.getVacanciesByRegisterId = async (req, res) => {
-  try {
-    const { registerId } = req.params;
-
-    const vacancies = await Vacancy.find({
-      registerId
-    }).sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      message: "Vacancies fetched successfully",
-      registerId,
-      count: vacancies.length,
-      vacancies
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      message: error.message
-    });
-  }
+  res.json(v);
 };
 
+// ================= PUBLISH (HIDES PRIVATE DATA) =================
+exports.publishVacancy = async (req, res) => {
+  const v = await Vacancy.findOneAndUpdate(
+    { vacancyId: req.params.id },
+    { status: "published", isPublished: true },
+    { returnDocument: "after" }
+  );
 
-// ==========================================
-// GET VACANCY BY MONGODB ID
-// ==========================================
+  if (!v) return res.status(404).json({ message: "Not found" });
 
+  res.json({
+    message: "Published successfully",
+    vacancy: toPublicVacancy(v),
+  });
+};
+
+// ================= CLOSE =================
+exports.closeVacancy = async (req, res) => {
+  const v = await Vacancy.findOneAndUpdate(
+    { vacancyId: req.params.id },
+    { status: "closed" },
+    { returnDocument: "after" }
+  );
+
+  res.json(v);
+};
+
+// ================= GET ALL (ADMIN) =================
+exports.getAllVacancies = async (req, res) => {
+  const data = await Vacancy.find().sort({ createdAt: -1 });
+  res.json({ count: data.length, data });
+};
+
+// ================= PUBLIC (SEEKER) =================
+exports.getPublicVacancies = async (req, res) => {
+  const data = await Vacancy.find({
+    status: "published",
+    isPublished: true,
+  });
+
+  res.json({
+    count: data.length,
+    vacancies: data.map(toPublicVacancy),
+  });
+};
+
+// ================= GET BY VACANCY ID =================
 exports.getVacancyById = async (req, res) => {
-  try {
-    const vacancy = await Vacancy.findById(req.params.id);
+  const v = await Vacancy.findOne({ vacancyId: req.params.id });
 
-    if (!vacancy) {
-      return res.status(404).json({
-        message: "Vacancy not found"
-      });
-    }
+  if (!v) return res.status(404).json({ message: "Not found" });
 
-    return res.status(200).json({
-      message: "Vacancy fetched successfully",
-      vacancy
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      message: error.message
-    });
-  }
+  res.json(v);
 };
 
-
-// ==========================================
-// GET VACANCY BY VACANCY ID
-// Example: V-734643
-// ==========================================
-
-exports.getVacancyByVacancyId = async (req, res) => {
-  try {
-    const vacancy = await Vacancy.findOne({
-      vacancyId: req.params.vacancyId
-    });
-
-    if (!vacancy) {
-      return res.status(404).json({
-        message: "Vacancy not found"
-      });
-    }
-
-    return res.status(200).json({
-      message: "Vacancy fetched successfully",
-      vacancy
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      message: error.message
-    });
-  }
-};
-
-
-// ==========================================
-// UPDATE VACANCY
-// ==========================================
-
+// ================= UPDATE =================
 exports.updateVacancy = async (req, res) => {
-  try {
-    // Do not allow these IDs to be changed
-    delete req.body.vacancyId;
-    delete req.body.registerId;
+  delete req.body.vacancyId;
+  delete req.body.registerId;
 
-    const vacancy = await Vacancy.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true
-      }
-    );
+  const v = await Vacancy.findOneAndUpdate(
+    { vacancyId: req.params.id },
+    req.body,
+    { returnDocument: "after" }
+  );
 
-    if (!vacancy) {
-      return res.status(404).json({
-        message: "Vacancy not found"
-      });
-    }
-
-    return res.status(200).json({
-      message: "Vacancy updated successfully",
-      vacancy
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      message: error.message
-    });
-  }
+  res.json(v);
 };
 
-
-// ==========================================
-// DELETE VACANCY
-// ==========================================
-
+// ================= DELETE =================
 exports.deleteVacancy = async (req, res) => {
-  try {
-    const vacancy = await Vacancy.findByIdAndDelete(
-      req.params.id
-    );
+  const v = await Vacancy.findOneAndDelete({
+    vacancyId: req.params.id,
+  });
 
-    if (!vacancy) {
-      return res.status(404).json({
-        message: "Vacancy not found"
-      });
-    }
-
-    return res.status(200).json({
-      message: "Vacancy deleted successfully",
-      vacancyId: vacancy.vacancyId
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      message: error.message
-    });
-  }
+  res.json({
+    message: "Deleted",
+    vacancyId: v?.vacancyId,
+  });
 };

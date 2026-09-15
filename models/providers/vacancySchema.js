@@ -2,194 +2,68 @@ const mongoose = require("mongoose");
 
 const vacancySchema = new mongoose.Schema(
   {
-    // ==========================================
-    // UNIQUE VACANCY ID
-    // Example: V-734643
-    // ==========================================
     vacancyId: {
       type: String,
-      required: true,
       unique: true,
-      index: true
+      index: true,
     },
 
-    // ==========================================
-    // REGISTER ID
-    // Multiple vacancies can belong to one register
-    // ==========================================
     registerId: {
       type: String,
       required: true,
-      index: true
+      index: true,
     },
 
-    companyName: {
+    status: {
       type: String,
-      required: true,
-      trim: true
+      enum: [
+        "draft",
+        "pending_review",
+        "approved",
+        "rejected",
+        "published",
+        "closed",
+        "expired",
+      ],
+      default: "draft",
     },
 
-    companyNameKana: {
-      type: String,
-      default: ""
-    },
+    isPublished: { type: Boolean, default: false },
 
-    title: {
-      type: String,
-      required: true,
-      trim: true
-    },
+    reviewedAt: { type: Date, default: null },
 
-    titleKana: {
-      type: String,
-      default: ""
-    },
+    // BASIC FIELDS
+    companyName: String,
+    companyNameKana: String,
+    title: String,
+    titleKana: String,
 
-    employmentType: {
-      type: String,
-      default: ""
-    },
+    employmentType: String,
+    numberOfPeople: Number,
 
-    numberOfPeople: {
-      type: Number,
-      default: 1
-    },
+    jobDescription: String,
+    responsibilities: String,
 
-    jobDescription: {
-      type: String,
-      default: ""
-    },
+    requiredSkills: String,
+    preferredSkills: String,
 
-    responsibilities: {
-      type: String,
-      default: ""
-    },
+    requiredEducation: String,
+    requiredExperience: String,
 
-    requiredSkills: {
-      type: String,
-      default: ""
-    },
+    japaneseLevel: String,
 
-    preferredSkills: {
-      type: String,
-      default: ""
-    },
+    workLocation: String,
+    salaryMin: Number,
+    salaryMax: Number,
 
-    requiredEducation: {
-      type: String,
-      default: ""
-    },
+    benefits: [String],
+    insurance: [String],
 
-    requiredExperience: {
-      type: String,
-      default: ""
-    },
-
-    japaneseLevel: {
-      type: String,
-      default: ""
-    },
-
-    workLocation: {
-      type: String,
-      default: ""
-    },
-
-    workLocationDetail: {
-      type: String,
-      default: ""
-    },
-
-    remoteWork: {
-      type: String,
-      default: ""
-    },
-
-    salaryMin: {
-      type: Number,
-      default: 300
-    },
-
-    salaryMax: {
-      type: Number,
-      default: 500
-    },
-
-    salaryNote: {
-      type: String,
-      default: ""
-    },
-
-    workHours: {
-      type: String,
-      default: "9:00 - 18:00"
-    },
-
-    breakTime: {
-      type: String,
-      default: "12:00 - 13:00"
-    },
-
-    overtime: {
-      type: String,
-      default: "About 20 hours per month on average"
-    },
-
-    holidays: {
-      type: String,
-      default:
-        "Weekends and public holidays, summer vacation, and the year-end/New Year holidays"
-    },
-
-    benefits: {
-      type: [String],
-      default: []
-    },
-
-    insurance: {
-      type: [String],
-      default: []
-    },
-
-    trialPeriod: {
-      type: String,
-      default: "Three months"
-    },
-
-    applicationDeadline: {
-      type: String,
-      default: ""
-    },
-
-    startDate: {
-      type: String,
-      default: ""
-    },
-
-    selectionProcess: {
-      type: String,
-      default:
-        "Document screening → First interview → Final interview → Job offer"
-    },
-
-    contactPerson: {
-      type: String,
-      default: ""
-    },
-
-    contactPersonKana: {
-      type: String,
-      default: ""
-    },
-
-    contactEmail: {
-      type: String,
-      default: ""
-    }
+    contactPerson: String,
+    contactPersonKana: String,
+    contactEmail: String,
   },
-  {
-    timestamps: true
-  }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("Vacancy", vacancySchema);

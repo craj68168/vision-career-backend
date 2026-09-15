@@ -1,78 +1,37 @@
 const express = require("express");
-
 const router = express.Router();
 
 const {
   createVacancy,
-  getVacancies,
-  getVacanciesByRegisterId,
+  getAllVacancies,
+  getPublicVacancies,
   getVacancyById,
-  getVacancyByVacancyId,
   updateVacancy,
-  deleteVacancy
+  deleteVacancy,
+  approveVacancy,
+  rejectVacancy,
+  publishVacancy,
+  closeVacancy,
 } = require("../../controllers/providers/vacancyController");
 
+// CREATE
+router.post("/vacancy", createVacancy);
 
-// ==========================================
-// CREATE VACANCY
-// POST /api/vacancies
-// ==========================================
+// ADMIN
+router.get("/vacancy", getAllVacancies);
 
-router.post("/", createVacancy);
+// STATUS FLOW (IMPORTANT: vacancyId used here)
+router.put("/approve/:id", approveVacancy);
+router.put("/reject/:id", rejectVacancy);
+router.put("/publish/:id", publishVacancy);
+router.put("/close/:id", closeVacancy);
 
+// PUBLIC
+router.get("/public", getPublicVacancies);
 
-// ==========================================
-// GET ALL VACANCIES
-// GET /api/vacancies
-// ==========================================
-
-router.get("/", getVacancies);
-
-
-// ==========================================
-// GET VACANCIES BY REGISTER ID
-// GET /api/vacancies/register/:registerId
-// ==========================================
-
-router.get(
-  "/register/:registerId",
-  getVacanciesByRegisterId
-);
-
-
-// ==========================================
-// GET BY VACANCY ID
-// GET /api/vacancies/vacancy/V-734643
-// ==========================================
-
-router.get(
-  "/vacancy/:vacancyId",
-  getVacancyByVacancyId
-);
-
-
-// ==========================================
-// GET BY MONGODB _id
-// GET /api/vacancies/:id
-// ==========================================
-
+// COMMON
 router.get("/:id", getVacancyById);
-
-
-// ==========================================
-// UPDATE
-// PUT /api/vacancies/:id
-// ==========================================
-
 router.put("/:id", updateVacancy);
-
-
-// ==========================================
-// DELETE
-// DELETE /api/vacancies/:id
-// ==========================================
-
 router.delete("/:id", deleteVacancy);
-
 
 module.exports = router;
