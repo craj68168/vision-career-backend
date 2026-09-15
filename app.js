@@ -54,13 +54,6 @@ app.get("/", (req, res) => {
 });
 
 // ======================================================
-// PROVIDER ROUTES
-// ======================================================
-
-// ✅ ONLY ONE AUTH ROUTE
-app.use("/api/auth/providers", registerRoutes);
-
-// ======================================================
 // SEEKER AUTH ROUTES
 // ======================================================
 app.use("/api/seekers/resume", seekerResumeRoutes);
@@ -69,9 +62,27 @@ app.use("/api/seekers/auth", seekerAuthRoutes);
 // other provider routes
 // app.use("/api/profile", profileRoutes);
 
+// ======================================================
+// PROVIDER ROUTES
+// ======================================================
+
+app.use("/api/auth/providers", registerRoutes);
 app.use("/api/auth/providers", forgotRoutes);
-app.use("/api/providers", vacancyRoutes);
-app.use("/api/providers", recruitRoutes);
+// ======================================================
+// PROVIDER VACANCIES
+// ======================================================
+app.use("/api/providers/vacancies", vacancyRoutes);
+
+// ======================================================
+// PROVIDER RECRUIT / PLACEMENT REQUESTS
+// ======================================================
+app.use("/api/providers/recruits", recruitRoutes);
+
+// ======================================================
+// PROVIDER PROFILE
+// ======================================================
+
+app.use("/api/providers/profile", profileRoutes);
 
 // ======================================================
 // SEEKER ROUTES
@@ -83,7 +94,6 @@ app.use("/api/seekers/applications", seekerApplicationRoutes);
 
 // Existing provider profile routes
 app.use("/api/auth", registerRoutes);
-app.use("/api/providers", profileRoutes);
 
 // ======================================================
 // NOT FOUND

@@ -1,15 +1,26 @@
 const express = require("express");
-const router = express.Router();
 
 const {
   getProfile,
   updateProfile,
 } = require("../../controllers/providers/profileController");
 
-router.get("/:registerId", getProfile);
+const providerAuth = require("../../middleware/providerAuth");
 
-router.put("/:registerId", updateProfile);
+const router = express.Router();
 
-module.exports = router;
+// ======================================================
+// GET PROVIDER PROFILE
+// GET /api/providers/profile
+// ======================================================
+
+router.get("/", providerAuth, getProfile);
+
+// ======================================================
+// UPDATE PROVIDER PROFILE
+// PATCH /api/providers/profile
+// ======================================================
+
+router.patch("/", providerAuth, updateProfile);
 
 module.exports = router;

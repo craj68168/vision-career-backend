@@ -1,5 +1,4 @@
 const express = require("express");
-const router = express.Router();
 
 const {
   createRecruit,
@@ -13,25 +12,26 @@ const {
 
 const providerAuth = require("../../middleware/providerAuth");
 
-// CREATE
-router.post("/recruits", providerAuth, createRecruit);
+const router = express.Router();
 
-// LIST
-router.get("/recruits", getAllRecruits);
+// POST /api/providers/recruits
+router.post("/", providerAuth, createRecruit);
 
-// SINGLE
-router.get("/recruits/:recruitId", getRecruitById);
+// GET /api/providers/recruits
+router.get("/", providerAuth, getAllRecruits);
 
-// UPDATE
-router.put("/recruits/:recruitId", updateRecruit);
+// GET /api/providers/recruits/R-XXXX
+router.get("/:recruitId", providerAuth, getRecruitById);
 
-// DELETE
-router.delete("/recruits/:recruitId", deleteRecruit);
+// PUT /api/providers/recruits/R-XXXX
+router.put("/:recruitId", providerAuth, updateRecruit);
 
-// APPROVE
-router.put("/recruits/approve/:recruitId", approveRecruit);
+// DELETE /api/providers/recruits/R-XXXX
+router.delete("/:recruitId", providerAuth, deleteRecruit);
 
-// REJECT
-router.put("/recruits/reject/:recruitId", rejectRecruit);
+// ADMIN — move later
+router.put("/approve/:recruitId", approveRecruit);
+
+router.put("/reject/:recruitId", rejectRecruit);
 
 module.exports = router;
