@@ -31,6 +31,7 @@ const toPublicVacancy = (v) => ({
   salaryMin: v.salaryMin,
   salaryMax: v.salaryMax,
   status: v.status,
+  isPublished: v.isPublished, 
 });
 
 // ================= CREATE VACANCY =================
