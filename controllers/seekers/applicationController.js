@@ -10,9 +10,7 @@ const Seeker = require(
 
 // This will be the SAME vacancy model used by Provider/Admin.
 // Do not create a second vacancy collection.
-const Vacancy = require(
-  "../../models/vacancies/vacancySchema",
-);
+
 
 // ======================================================
 // GENERATE CUSTOM APPLICATION ID
