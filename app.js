@@ -12,17 +12,12 @@ const vacancyRoutes = require("./routes/providers/vacancyRoutes");
 const forgotRoutes = require("./routes/providers/forgotRoutes");
 const recruitRoutes = require("./routes/providers/recruitRoutes");
 
-
 const seekerAuthRoutes = require("./routes/seekers/authRoutes");
 const seekerProfileRoutes = require("./routes/seekers/profileRoutes");
 
-const seekerApplicationRoutes = require(
-  "./routes/seekers/applicationRoutes",
-);
+const seekerApplicationRoutes = require("./routes/seekers/applicationRoutes");
 
-const seekerResumeRoutes = require(
-  "./routes/seekers/resumeRoutes",
-);
+const seekerResumeRoutes = require("./routes/seekers/resumeRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -35,7 +30,7 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json());
@@ -58,7 +53,6 @@ app.get("/", (req, res) => {
   });
 });
 
-
 // ======================================================
 // PROVIDER ROUTES
 // ======================================================
@@ -69,18 +63,12 @@ app.use("/api/auth/providers", registerRoutes);
 // ======================================================
 // SEEKER AUTH ROUTES
 // ======================================================
-app.use(
-  "/api/seekers/resume",
-  seekerResumeRoutes,
-);
+app.use("/api/seekers/resume", seekerResumeRoutes);
 
-app.use(
-  "/api/seekers/auth",
-  seekerAuthRoutes,
-);
+app.use("/api/seekers/auth", seekerAuthRoutes);
 // other provider routes
 // app.use("/api/profile", profileRoutes);
-app.use("/api/providers", profileRoutes);
+
 app.use("/api/auth/providers", forgotRoutes);
 app.use("/api/providers", vacancyRoutes);
 app.use("/api/providers", recruitRoutes);
@@ -89,23 +77,13 @@ app.use("/api/providers", recruitRoutes);
 // SEEKER ROUTES
 // ======================================================
 
-app.use("/api/seekers/auth", seekerAuthRoutes);
 app.use("/api/seekers/profile", seekerProfileRoutes);
 
-app.use(
-  "/api/seekers/applications",
-  seekerApplicationRoutes,
-);
-
-
+app.use("/api/seekers/applications", seekerApplicationRoutes);
 
 // Existing provider profile routes
 app.use("/api/auth", registerRoutes);
 app.use("/api/providers", profileRoutes);
-
-
-
-
 
 // ======================================================
 // NOT FOUND
@@ -117,7 +95,6 @@ app.use((req, res) => {
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
-
 
 // ======================================================
 // ERROR HANDLER
@@ -131,7 +108,6 @@ app.use((err, req, res, next) => {
     message: err.message || "Internal server error",
   });
 });
-
 
 // ======================================================
 // START SERVER

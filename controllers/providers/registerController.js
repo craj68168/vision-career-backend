@@ -7,13 +7,21 @@ exports.register = async (req, res) => {
   try {
     const { name, companyName, email, password } = req.body;
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (!name || !companyName || !email || !password) {
       return res.status(400).json({
         message: "All fields are required",
       });
     }
 
-    const existing = await Register.findOne({ email });
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters",
+      });
+    }
+
+    const existing = await Register.findOne({ email: normalizedEmail });
     if (existing) {
       return res.status(409).json({
         message: "Email already exists",
@@ -23,9 +31,9 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await Register.create({
-      name,
-      companyName,
-      email,
+      name: name.trim(),
+      companyName: companyName.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
     });
 
@@ -51,14 +59,16 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
+    const normalizedEmail = email.trim().toLowerCase();
     if (!email || !password) {
       return res.status(400).json({
         message: "Email and password are required",
       });
     }
 
-    const user = await Register.findOne({ email }).select("+password");
+    const user = await Register.findOne({ email: normalizedEmail }).select(
+      "+password",
+    );
 
     if (!user) {
       return res.status(401).json({
@@ -81,7 +91,7 @@ exports.login = async (req, res) => {
         registerId: user.registerId,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "1h" },
     );
 
     return res.status(200).json({
