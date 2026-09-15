@@ -43,13 +43,9 @@ const formatDate = (date) => {
 };
 
 const setRegularFont = (doc) => {
-  const customFont =
-    process.env.RESUME_FONT_PATH;
+  const customFont = process.env.RESUME_FONT_PATH;
 
-  if (
-    customFont &&
-    fs.existsSync(customFont)
-  ) {
+  if (customFont && fs.existsSync(customFont)) {
     doc.font(customFont);
     return;
   }
@@ -58,13 +54,9 @@ const setRegularFont = (doc) => {
 };
 
 const setBoldFont = (doc) => {
-  const customBoldFont =
-    process.env.RESUME_BOLD_FONT_PATH;
+  const customBoldFont = process.env.RESUME_BOLD_FONT_PATH;
 
-  if (
-    customBoldFont &&
-    fs.existsSync(customBoldFont)
-  ) {
+  if (customBoldFont && fs.existsSync(customBoldFont)) {
     doc.font(customBoldFont);
     return;
   }
@@ -89,19 +81,12 @@ const addSectionTitle = (doc, title) => {
   setRegularFont(doc);
 };
 
-const addLabelValue = (
-  doc,
-  label,
-  value,
-) => {
+const addLabelValue = (doc, label, value) => {
   setBoldFont(doc);
 
-  doc.fontSize(10).text(
-    `${label}: `,
-    {
-      continued: true,
-    },
-  );
+  doc.fontSize(10).text(`${label}: `, {
+    continued: true,
+  });
 
   setRegularFont(doc);
 
@@ -112,278 +97,173 @@ const addLabelValue = (
 // GENERATE RESUME PDF
 // ======================================================
 
-const generateResumePdf = async (
-  seeker,
-  options = {},
-) => {
-  const {
-    type = "profile",
-    applicationId = null,
-  } = options;
+const generateResumePdf = async (seeker, options = {}) => {
+  const { type = "profile", applicationId = null } = options;
 
   let fileName;
   let outputDirectory;
   let relativePath;
 
+  // ======================================================
+  // APPLICATION RESUME
+  // ======================================================
+
   if (type === "application") {
     if (!applicationId) {
-      throw new Error(
-        "applicationId is required for application resume.",
-      );
+      throw new Error("applicationId is required for application resume.");
     }
 
     fileName = `${applicationId}.pdf`;
 
-    outputDirectory =
-      APPLICATION_RESUME_DIR;
+    outputDirectory = APPLICATION_RESUME_DIR;
 
-    relativePath =
-      `application-resumes/${fileName}`;
+    relativePath = `application-resumes/${fileName}`;
+
+    // ======================================================
+    // PROFILE RESUME
+    // ======================================================
   } else {
-    fileName =
-      `${seeker.seeker_id}-${Date.now()}.pdf`;
+    fileName = `${seeker.seeker_id}-${Date.now()}.pdf`;
 
-    outputDirectory =
-      GENERATED_RESUME_DIR;
+    outputDirectory = GENERATED_RESUME_DIR;
 
-    relativePath =
-      `generated-resumes/${fileName}`;
+    relativePath = `generated-resumes/${fileName}`;
   }
 
-  const absolutePath = path.join(
-    outputDirectory,
-    fileName,
-  );
+  const absolutePath = path.join(outputDirectory, fileName);
 
   // ==================================================
   // YOUR EXISTING PDFKIT CODE GOES HERE
   // ==================================================
 
-  await new Promise(
-    (resolve, reject) => {
-      const doc =
-        new PDFDocument({
-          size: "A4",
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: "A4",
 
-          margins: {
-            top: 50,
-            bottom: 50,
-            left: 55,
-            right: 55,
-          },
-        });
+      margins: {
+        top: 50,
+        bottom: 50,
+        left: 55,
+        right: 55,
+      },
+    });
 
-      const stream =
-        fs.createWriteStream(
-          absolutePath,
-        );
+    const stream = fs.createWriteStream(absolutePath);
 
-      stream.on("finish", resolve);
-      stream.on("error", reject);
-      doc.on("error", reject);
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    doc.on("error", reject);
 
-      doc.pipe(stream);
+    doc.pipe(stream);
 
-      // ----------------------------------------------
-      // TITLE
-      // ----------------------------------------------
+    // ----------------------------------------------
+    // TITLE
+    // ----------------------------------------------
 
-      setBoldFont(doc);
+    setBoldFont(doc);
 
-      doc
-        .fontSize(22)
-        .text(
-          "Professional Resume",
-          {
-            align: "center",
-          },
-        );
+    doc.fontSize(22).text("Professional Resume", {
+      align: "center",
+    });
 
-      doc.moveDown();
+    doc.moveDown();
 
-      // ----------------------------------------------
-      // PROFESSIONAL INFORMATION
-      // ----------------------------------------------
+    // ----------------------------------------------
+    // PROFESSIONAL INFORMATION
+    // ----------------------------------------------
 
-      addSectionTitle(
-        doc,
-        "Professional Information",
-      );
+    addSectionTitle(doc, "Professional Information");
 
-      addLabelValue(
-        doc,
-        "Name",
-        seeker.name,
-      );
+    addLabelValue(doc, "Name", seeker.name);
 
-      addLabelValue(
-        doc,
-        "Nationality",
-        seeker.nationality,
-      );
+    addLabelValue(doc, "Nationality", seeker.nationality);
 
-      addLabelValue(
-        doc,
-        "Visa Type",
-        seeker.visa_type,
-      );
+    addLabelValue(doc, "Visa Type", seeker.visa_type);
 
-      addLabelValue(
-        doc,
-        "Visa Expiry",
-        formatDate(
-          seeker.visa_expiry_date,
-        ),
-      );
+    addLabelValue(doc, "Visa Expiry", formatDate(seeker.visa_expiry_date));
 
-      addLabelValue(
-        doc,
-        "Japanese Level",
-        seeker.japanese_level,
-      );
+    addLabelValue(doc, "Japanese Level", seeker.japanese_level);
 
-      addLabelValue(
-        doc,
-        "Desired Job",
-        seeker.desired_job,
-      );
+    addLabelValue(doc, "Desired Job", seeker.desired_job);
 
-      addLabelValue(
-        doc,
-        "Desired Location",
-        seeker.desired_location,
-      );
+    addLabelValue(doc, "Desired Location", seeker.desired_location);
 
-      // ----------------------------------------------
-      // SKILLS
-      // ----------------------------------------------
+    // ----------------------------------------------
+    // SKILLS
+    // ----------------------------------------------
 
-      addSectionTitle(
-        doc,
-        "Skills",
-      );
+    addSectionTitle(doc, "Skills");
 
-      setRegularFont(doc);
+    setRegularFont(doc);
 
-      doc
-        .fontSize(10)
-        .text(
-          seeker.skills?.length
-            ? seeker.skills.join(", ")
-            : "-",
-        );
+    doc
+      .fontSize(10)
+      .text(seeker.skills?.length ? seeker.skills.join(", ") : "-");
 
-      // ----------------------------------------------
-      // EDUCATION
-      // ----------------------------------------------
+    // ----------------------------------------------
+    // EDUCATION
+    // ----------------------------------------------
 
-      addSectionTitle(
-        doc,
-        "Education",
-      );
+    addSectionTitle(doc, "Education");
 
-      if (
-        seeker.education?.length
-      ) {
-        seeker.education.forEach(
-          (education) => {
-            setBoldFont(doc);
+    if (seeker.education?.length) {
+      seeker.education.forEach((education) => {
+        setBoldFont(doc);
 
-            doc
-              .fontSize(11)
-              .text(
-                education.school ||
-                  "-",
-              );
+        doc.fontSize(11).text(education.school || "-");
 
-            setRegularFont(doc);
+        setRegularFont(doc);
 
-            doc
-              .fontSize(10)
-              .text(
-                `Major: ${
-                  education.major ||
-                  "-"
-                }`,
-              );
+        doc.fontSize(10).text(`Major: ${education.major || "-"}`);
 
-            doc
-              .fontSize(10)
-              .text(
-                `${formatDate(
-                  education.enrollment_date,
-                )} - ${formatDate(
-                  education.graduation_date,
-                )}`,
-              );
+        doc
+          .fontSize(10)
+          .text(
+            `${formatDate(education.enrollment_date)} - ${formatDate(
+              education.graduation_date,
+            )}`,
+          );
 
-            doc.moveDown(0.7);
-          },
-        );
-      } else {
-        doc.text("-");
-      }
+        doc.moveDown(0.7);
+      });
+    } else {
+      doc.text("-");
+    }
 
-      // ----------------------------------------------
-      // EMPLOYMENT
-      // ----------------------------------------------
+    // ----------------------------------------------
+    // EMPLOYMENT
+    // ----------------------------------------------
 
-      addSectionTitle(
-        doc,
-        "Employment History",
-      );
+    addSectionTitle(doc, "Employment History");
 
-      if (
-        seeker.employment_history
-          ?.length
-      ) {
-        seeker.employment_history.forEach(
-          (employment) => {
-            setBoldFont(doc);
+    if (seeker.employment_history?.length) {
+      seeker.employment_history.forEach((employment) => {
+        setBoldFont(doc);
 
-            doc
-              .fontSize(11)
-              .text(
-                employment.company_name ||
-                  "-",
-              );
+        doc.fontSize(11).text(employment.company_name || "-");
 
-            setRegularFont(doc);
+        setRegularFont(doc);
 
-            doc
-              .fontSize(10)
-              .text(
-                `Employment Type: ${
-                  employment.employment_type ||
-                  "-"
-                }`,
-              );
+        doc
+          .fontSize(10)
+          .text(`Employment Type: ${employment.employment_type || "-"}`);
 
-            const endDate =
-              employment.end_date
-                ? formatDate(
-                    employment.end_date,
-                  )
-                : "Present";
+        const endDate = employment.end_date
+          ? formatDate(employment.end_date)
+          : "Present";
 
-            doc
-              .fontSize(10)
-              .text(
-                `${formatDate(
-                  employment.start_date,
-                )} - ${endDate}`,
-              );
+        doc
+          .fontSize(10)
+          .text(`${formatDate(employment.start_date)} - ${endDate}`);
 
-            doc.moveDown(0.7);
-          },
-        );
-      } else {
-        doc.text("-");
-      }
+        doc.moveDown(0.7);
+      });
+    } else {
+      doc.text("-");
+    }
 
-      doc.end();
-    },
-  );
+    doc.end();
+  });
 
   return {
     fileName,

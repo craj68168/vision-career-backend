@@ -10,7 +10,6 @@ const Seeker = require("../../models/seekers/seekerSchema");
 // Do not create a second vacancy collection.
 const Vacancy = require("../../models/vacancies/vacancySchema");
 
-const { generateResumePdf } = require("../../services/resumeService");
 // ======================================================
 // GENERATE CUSTOM APPLICATION ID
 // Example: APP-A12B34CD
@@ -20,6 +19,12 @@ const generateApplicationId = () => {
   return `APP-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 };
 
+const path = require("path");
+
+const {
+  generateResumePdf,
+  APPLICATION_RESUME_DIR,
+} = require("../../services/resumeService");
 // ======================================================
 // BUILD PRIVACY-SAFE PROFESSIONAL SNAPSHOT
 // ======================================================
@@ -360,6 +365,73 @@ exports.getMyApplicationById = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to get application.",
+    });
+  }
+};
+
+// ======================================================
+// VIEW RESUME ATTACHED TO APPLICATION
+// GET /api/seekers/applications/:application_id/resume
+// ======================================================
+
+exports.getMyApplicationResume = async (req, res) => {
+  try {
+    const seekerId = req.user.seeker_id;
+    const { application_id } = req.params;
+
+    // Find application AND confirm it belongs
+    // to the logged-in seeker.
+    const application = await Application.findOne({
+      application_id,
+      seeker_id: seekerId,
+    });
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Application not found.",
+      });
+    }
+
+    const resumePath = application.profile_snapshot?.generated_resume_file;
+
+    if (!resumePath) {
+      return res.status(404).json({
+        success: false,
+        message: "No resume is attached to this application.",
+      });
+    }
+
+    // Only allow application-specific resumes here.
+    if (!resumePath.startsWith("application-resumes/")) {
+      return res.status(404).json({
+        success: false,
+        message: "Application resume is not available.",
+      });
+    }
+
+    const fileName = path.basename(resumePath);
+
+    const absolutePath = path.join(APPLICATION_RESUME_DIR, fileName);
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        message: "Application resume file not found.",
+      });
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+
+    return res.sendFile(absolutePath);
+  } catch (error) {
+    console.error("Get application resume error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get application resume.",
     });
   }
 };

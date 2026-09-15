@@ -4,6 +4,7 @@ const {
   applyForVacancy,
   getMyApplications,
   getMyApplicationById,
+  getMyApplicationResume,
 } = require(
   "../../controllers/seekers/applicationController",
 );
@@ -25,10 +26,17 @@ router.get(
   getMyApplications,
 );
 
+
 // ======================================================
 // GET MY APPLICATION DETAILS
 // GET /api/seekers/applications/:application_id
 // ======================================================
+
+router.get(
+  "/:application_id/resume",
+  seekerAuth,
+  getMyApplicationResume,
+);
 
 router.get(
   "/:application_id",
