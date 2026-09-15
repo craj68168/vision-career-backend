@@ -12,6 +12,7 @@ const Seeker = require("../../models/seekers/seekerSchema");
 // Do not create a second vacancy collection.
 const Vacancy = require("../../models/providers/vacancySchema");
 
+
 // ======================================================
 // GENERATE CUSTOM APPLICATION ID
 // Example: APP-A12B34CD
