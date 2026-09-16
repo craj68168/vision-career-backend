@@ -1,28 +1,57 @@
 const express = require("express");
+
 const cors = require("cors");
+
 const mongoose = require("mongoose");
+
 const path = require("path");
 
 require("dotenv").config();
 
-// ✅ FIXED IMPORT (NO destructuring)
+// ======================================================
+// PROVIDER ROUTES
+// ======================================================
+
 const registerRoutes = require("./routes/providers/registerRoutes");
+
 const profileRoutes = require("./routes/providers/profileRoutes");
+
 const vacancyRoutes = require("./routes/providers/vacancyRoutes");
+
 const forgotRoutes = require("./routes/providers/forgotRoutes");
+
 const recruitRoutes = require("./routes/providers/recruitRoutes");
 
+const providerApplicationRoutes = require("./routes/providers/applicationRoutes");
+
+// ======================================================
+// SEEKER ROUTES
+// ======================================================
+
 const seekerAuthRoutes = require("./routes/seekers/authRoutes");
+
 const seekerProfileRoutes = require("./routes/seekers/profileRoutes");
 
 const seekerApplicationRoutes = require("./routes/seekers/applicationRoutes");
+
 const seekerResumeRoutes = require("./routes/seekers/resumeRoutes");
 
 const seekerVacancyRoutes = require("./routes/seekers/vacancyRoutes");
+
 const seekerDashboardRoutes = require("./routes/seekers/dashboardRoutes");
+
+// ======================================================
+// MODELS USED DURING STARTUP
+// ======================================================
+
 const Vacancy = require("./models/providers/vacancySchema");
 
+// ======================================================
+// APP
+// ======================================================
+
 const app = express();
+
 const PORT = process.env.PORT || 8000;
 
 // ======================================================
@@ -32,54 +61,60 @@ const PORT = process.env.PORT || 8000;
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
+
     credentials: true,
   }),
 );
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+);
 
 // ======================================================
 // STATIC FILES
 // ======================================================
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(
+  "/uploads",
+
+  express.static(path.join(__dirname, "uploads")),
+);
 
 // ======================================================
 // HEALTH CHECK
 // ======================================================
 
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "Job portal API is running.",
-  });
-});
+app.get(
+  "/",
+
+  (req, res) => {
+    res.json({
+      success: true,
+
+      message: "Job portal API is running.",
+    });
+  },
+);
 
 // ======================================================
-// SEEKER AUTH ROUTES
+// SEEKER AUTH / RESUME
 // ======================================================
+
 app.use("/api/seekers/resume", seekerResumeRoutes);
 
 app.use("/api/seekers/auth", seekerAuthRoutes);
-// other provider routes
-// app.use("/api/profile", profileRoutes);
 
 // ======================================================
-// PROVIDER ROUTES
+// PROVIDER AUTH
 // ======================================================
 
 app.use("/api/auth/providers", registerRoutes);
-app.use("/api/auth/providers", forgotRoutes);
-// ======================================================
-// PROVIDER VACANCIES
-// ======================================================
-app.use("/api/providers/vacancies", vacancyRoutes);
 
-// ======================================================
-// PROVIDER RECRUIT / PLACEMENT REQUESTS
-// ======================================================
-app.use("/api/providers/recruits", recruitRoutes);
+app.use("/api/auth/providers", forgotRoutes);
 
 // ======================================================
 // PROVIDER PROFILE
@@ -88,15 +123,60 @@ app.use("/api/providers/recruits", recruitRoutes);
 app.use("/api/providers/profile", profileRoutes);
 
 // ======================================================
-// SEEKER ROUTES
+// PROVIDER VACANCIES
+// ======================================================
+
+app.use("/api/providers/vacancies", vacancyRoutes);
+
+// ======================================================
+// PROVIDER APPLICATIONS
+// ======================================================
+//
+// NEW:
+//
+// GET
+// /api/providers/applications
+//
+// GET
+// /api/providers/applications/:applicationId
+//
+// GET
+// /api/providers/applications/:applicationId/resume
+//
+// PATCH
+// /api/providers/applications/:applicationId/status
+//
+// ======================================================
+
+app.use("/api/providers/applications", providerApplicationRoutes);
+
+// ======================================================
+// PROVIDER RECRUIT / PLACEMENT REQUESTS
+// ======================================================
+
+app.use("/api/providers/recruits", recruitRoutes);
+
+// ======================================================
+// SEEKER PROFILE
 // ======================================================
 
 app.use("/api/seekers/profile", seekerProfileRoutes);
 
+// ======================================================
+// SEEKER APPLICATIONS
+// ======================================================
+
 app.use("/api/seekers/applications", seekerApplicationRoutes);
 
-// Existing SeekerSide vacancy routes
+// ======================================================
+// SEEKER VACANCIES
+// ======================================================
+
 app.use("/api/seekers/vacancies", seekerVacancyRoutes);
+
+// ======================================================
+// SEEKER DASHBOARD
+// ======================================================
 
 app.use("/api/seekers/dashboard", seekerDashboardRoutes);
 
@@ -107,6 +187,7 @@ app.use("/api/seekers/dashboard", seekerDashboardRoutes);
 app.use((req, res) => {
   res.status(404).json({
     success: false,
+
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
@@ -120,6 +201,7 @@ app.use((err, req, res, next) => {
 
   res.status(err.status || 500).json({
     success: false,
+
     message: err.message || "Internal server error",
   });
 });
@@ -143,22 +225,16 @@ const startServer = async () => {
     console.log("✅ MongoDB connected");
 
     // ================================================
-    // FIX OLD VACANCY INDEX
+    // LEGACY VACANCY INDEX CLEANUP
     // ================================================
     //
-    // Previous vacancy schema used:
+    // Previous schema:
     //
     // vacancy_id
     //
-    // Current vacancy schema uses:
+    // Current schema:
     //
     // vacancyId
-    //
-    // If old unique index still exists,
-    // MongoDB throws:
-    //
-    // E11000 duplicate key
-    // vacancy_id: null
     //
     // ================================================
 
@@ -180,7 +256,7 @@ const startServer = async () => {
     }
 
     // ================================================
-    // MAKE SURE CURRENT SCHEMA INDEXES EXIST
+    // CURRENT VACANCY INDEXES
     // ================================================
 
     await Vacancy.init();
