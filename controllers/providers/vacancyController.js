@@ -21,7 +21,7 @@ const generateVacancyId = async () => {
     },
 
     {
-      new: true,
+      returnDocument: "after",
       upsert: true,
     },
   );
@@ -254,18 +254,14 @@ exports.createVacancy = async (req, res) => {
   } catch (error) {
     console.error("CREATE VACANCY ERROR:", error);
 
-    if (error.name === "ValidationError") {
-      return res.status(400).json({
-        status: "error",
-
-        message: error.message,
-      });
-    }
-
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to create vacancy",
+      message: error.message || "Failed to create vacancy",
+
+      errorName: error.name,
+
+      errorCode: error.code,
     });
   }
 };

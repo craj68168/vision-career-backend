@@ -8,96 +8,172 @@ const Application = require("../../models/applications/applicationSchema");
 
 const Seeker = require("../../models/seekers/seekerSchema");
 
-// This will be the SAME vacancy model used by Provider/Admin.
-// Do not create a second vacancy collection.
 const Vacancy = require("../../models/providers/vacancySchema");
 
+const {
+  generateResumePdf,
+  APPLICATION_RESUME_DIR,
+} = require("../../services/resumeService");
 
 // ======================================================
-// GENERATE CUSTOM APPLICATION ID
-// Example: APP-A12B34CD
+// GET START OF TODAY
+// ======================================================
+//
+// Used for application deadline checks.
+//
+// A vacancy with:
+//
+// applicationDeadline = 2026-09-16
+//
+// remains applyable during September 16.
+//
+// It becomes expired from September 17.
+//
+// ======================================================
+
+const getTodayStartUTC = () => {
+  const today = new Date();
+
+  today.setUTCHours(0, 0, 0, 0);
+
+  return today;
+};
+
+// ======================================================
+// APPLICATION TRACKING STEPS
 // ======================================================
 
 const APPLICATION_STEPS = [
   {
     key: "PENDING_ADMIN_APPROVAL",
+
     label: "Application Submitted",
   },
+
   {
     key: "SENT_TO_PROVIDER",
+
     label: "Sent to Employer",
   },
+
   {
     key: "UNDER_REVIEW",
+
     label: "Under Review",
   },
+
   {
     key: "INTERVIEW",
+
     label: "Interview",
   },
+
   {
     key: "SELECTED",
+
     label: "Selected",
   },
+
   {
     key: "HIRED",
+
     label: "Hired",
   },
 ];
+
+// ======================================================
+// GENERATE APPLICATION ID
+//
+// Example:
+//
+// APP-A12B34CD
+//
+// ======================================================
+
+const generateApplicationId = () => {
+  return `APP-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+};
 
 // ======================================================
 // BUILD APPLICATION STATUS TRACKING
 // ======================================================
 
 const getStatusTracking = (status) => {
-  // Admin rejected
+  // ================================================
+  // ADMIN REJECTED
+  // ================================================
+
   if (status === "ADMIN_REJECTED") {
     return {
       current_status: status,
+
       current_label: "Not Approved",
+
       outcome: "rejected",
 
       steps: [
         {
           key: "PENDING_ADMIN_APPROVAL",
+
           label: "Application Submitted",
+
           state: "completed",
         },
+
         {
           key: "ADMIN_REJECTED",
+
           label: "Not Approved",
+
           state: "rejected",
         },
       ],
     };
   }
 
-  // Provider rejected
+  // ================================================
+  // PROVIDER REJECTED
+  // ================================================
+
   if (status === "REJECTED") {
     return {
       current_status: status,
+
       current_label: "Not Selected",
+
       outcome: "rejected",
 
       steps: [
         {
           key: "PENDING_ADMIN_APPROVAL",
+
           label: "Application Submitted",
+
           state: "completed",
         },
+
         {
           key: "SENT_TO_PROVIDER",
+
           label: "Sent to Employer",
+
           state: "completed",
         },
+
         {
           key: "REJECTED",
+
           label: "Not Selected",
+
           state: "rejected",
         },
       ],
     };
   }
+
+  // ================================================
+  // NORMAL STATUS
+  // ================================================
 
   const currentIndex = APPLICATION_STEPS.findIndex(
     (step) => step.key === status,
@@ -111,31 +187,24 @@ const getStatusTracking = (status) => {
     }
 
     if (index === currentIndex) {
-      state =
-        status === "HIRED"
-          ? "completed"
-          : "current";
+      state = status === "HIRED" ? "completed" : "current";
     }
 
     return {
       ...step,
+
       state,
     };
   });
 
-  const currentStep =
-    APPLICATION_STEPS[currentIndex];
+  const currentStep = APPLICATION_STEPS[currentIndex];
 
   return {
     current_status: status,
 
-    current_label:
-      currentStep?.label || status,
+    current_label: currentStep?.label || status,
 
-    outcome:
-      status === "HIRED"
-        ? "completed"
-        : "in_progress",
+    outcome: status === "HIRED" ? "completed" : "in_progress",
 
     steps,
   };
@@ -146,94 +215,149 @@ const getStatusTracking = (status) => {
 // ======================================================
 
 const toSeekerApplication = (application) => {
-  const data = application.toObject
-    ? application.toObject()
-    : application;
+  const data = application.toObject ? application.toObject() : application;
 
   return {
+    // ==================================================
+    // IDS
+    // ==================================================
+
     application_id: data.application_id,
+
     vacancy_id: data.vacancy_id,
+
+    // ==================================================
+    // APPLICATION
+    // ==================================================
 
     cover_letter: data.cover_letter,
 
+    // ==================================================
+    // PROFILE SNAPSHOT
+    // ==================================================
+
     profile_snapshot: {
-      name:
-        data.profile_snapshot?.name,
+      name: data.profile_snapshot?.name,
 
-      nationality:
-        data.profile_snapshot?.nationality,
+      nationality: data.profile_snapshot?.nationality,
 
-      visa_type:
-        data.profile_snapshot?.visa_type,
+      visa_type: data.profile_snapshot?.visa_type,
 
-      visa_expiry_date:
-        data.profile_snapshot?.visa_expiry_date,
+      visa_expiry_date: data.profile_snapshot?.visa_expiry_date,
 
-      japanese_level:
-        data.profile_snapshot?.japanese_level,
+      japanese_level: data.profile_snapshot?.japanese_level,
 
-      skills:
-        data.profile_snapshot?.skills || [],
+      skills: data.profile_snapshot?.skills || [],
 
-      desired_job:
-        data.profile_snapshot?.desired_job,
+      desired_job: data.profile_snapshot?.desired_job,
 
-      desired_location:
-        data.profile_snapshot?.desired_location,
+      desired_location: data.profile_snapshot?.desired_location,
 
-      education:
-        data.profile_snapshot?.education || [],
+      education: data.profile_snapshot?.education || [],
 
-      employment_history:
-        data.profile_snapshot?.employment_history || [],
+      employment_history: data.profile_snapshot?.employment_history || [],
     },
 
-    resume_available: Boolean(
-      data.profile_snapshot?.generated_resume_file,
-    ),
+    // ==================================================
+    // RESUME
+    // ==================================================
+
+    resume_available: Boolean(data.profile_snapshot?.generated_resume_file),
+
+    // ==================================================
+    // STATUS
+    // ==================================================
 
     status: data.status,
 
-    status_tracking:
-      getStatusTracking(data.status),
+    status_tracking: getStatusTracking(data.status),
+
+    // ==================================================
+    // ADMIN REVIEW
+    // ==================================================
 
     admin_rejection_reason:
-      data.status === "ADMIN_REJECTED"
-        ? data.admin_rejection_reason
-        : null,
+      data.status === "ADMIN_REJECTED" ? data.admin_rejection_reason : null,
 
-    admin_reviewed_at:
-      data.admin_reviewed_at || null,
+    admin_reviewed_at: data.admin_reviewed_at || null,
+
+    // ==================================================
+    // DATES
+    // ==================================================
 
     applied_at: data.applied_at,
+
     created_at: data.created_at,
+
     updated_at: data.updated_at,
   };
 };
 
-const generateApplicationId = () => {
-  return `APP-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+// ======================================================
+// SEEKER-SAFE VACANCY SUMMARY
+// ======================================================
+//
+// Used inside My Applications.
+//
+// Do NOT expose:
+//
+// - registerId
+// - contactPerson
+// - contactEmail
+// - workLocationDetail
+//
+// ======================================================
+
+const toSeekerVacancySummary = (vacancy) => {
+  if (!vacancy) {
+    return null;
+  }
+
+  return {
+    vacancyId: vacancy.vacancyId,
+
+    companyName: vacancy.companyName,
+
+    companyNameKana: vacancy.companyNameKana,
+
+    title: vacancy.title,
+
+    titleKana: vacancy.titleKana,
+
+    employmentType: vacancy.employmentType,
+
+    numberOfPeople: vacancy.numberOfPeople,
+
+    jobDescription: vacancy.jobDescription,
+
+    japaneseLevel: vacancy.japaneseLevel,
+
+    workLocation: vacancy.workLocation,
+
+    remoteWork: vacancy.remoteWork,
+
+    salaryMin: vacancy.salaryMin,
+
+    salaryMax: vacancy.salaryMax,
+
+    status: vacancy.status,
+
+    createdAt: vacancy.createdAt,
+  };
 };
 
-
-const {
-  generateResumePdf,
-  APPLICATION_RESUME_DIR,
-} = require("../../services/resumeService");
 // ======================================================
-// BUILD PRIVACY-SAFE PROFESSIONAL SNAPSHOT
+// BUILD PROFESSIONAL PROFILE SNAPSHOT
 // ======================================================
 //
 // DO NOT include:
+//
 // - email
 // - phone
 // - address
 // - profile photo
-// - original resume
 // - private documents
 //
-// This snapshot represents what the seeker submitted
-// at the time of application.
 // ======================================================
 
 const buildProfileSnapshot = (seeker) => {
@@ -254,6 +378,10 @@ const buildProfileSnapshot = (seeker) => {
 
     desired_location: seeker.desired_location,
 
+    // ==================================================
+    // EDUCATION
+    // ==================================================
+
     education: (seeker.education || []).map((education) => ({
       enrollment_date: education.enrollment_date,
 
@@ -265,6 +393,10 @@ const buildProfileSnapshot = (seeker) => {
 
       major: education.major,
     })),
+
+    // ==================================================
+    // EMPLOYMENT
+    // ==================================================
 
     employment_history: (seeker.employment_history || []).map((employment) => ({
       start_date: employment.start_date,
@@ -280,35 +412,45 @@ const buildProfileSnapshot = (seeker) => {
 
 // ======================================================
 // APPLY FOR VACANCY
+//
 // POST /api/seekers/applications
+//
+// BODY:
+//
+// {
+//   "vacancyId": "V-000017",
+//   "coverLetter": null
+// }
+//
 // ======================================================
 
 exports.applyForVacancy = async (req, res) => {
   let applicationResumePath = null;
 
   try {
-    // --------------------------------------------------
-    // 1. Get logged-in seeker from JWT
-    // --------------------------------------------------
+    // ================================================
+    // LOGGED-IN SEEKER
+    // ================================================
 
     const seekerId = req.user.seeker_id;
 
-    // --------------------------------------------------
-    // 2. Get vacancyId from frontend
-    // --------------------------------------------------
+    // ================================================
+    // REQUEST DATA
+    // ================================================
 
     const { vacancyId, coverLetter } = req.body;
 
     if (!vacancyId) {
       return res.status(400).json({
         success: false,
+
         message: "vacancyId is required.",
       });
     }
 
-    // --------------------------------------------------
-    // 3. Confirm seeker still exists
-    // --------------------------------------------------
+    // ================================================
+    // FIND SEEKER
+    // ================================================
 
     const seeker = await Seeker.findOne({
       seeker_id: seekerId,
@@ -317,13 +459,14 @@ exports.applyForVacancy = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job Seeker not found.",
       });
     }
 
-    // --------------------------------------------------
-    // 4. Confirm seeker is approved + active
-    // --------------------------------------------------
+    // ================================================
+    // SEEKER MUST BE APPROVED + ACTIVE
+    // ================================================
 
     if (
       seeker.approval_status !== "approved" ||
@@ -331,105 +474,132 @@ exports.applyForVacancy = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
+
         message:
           "Your account must be approved and active before applying for vacancies.",
       });
     }
 
-    // --------------------------------------------------
-    // 5. Find selected vacancy
-    // --------------------------------------------------
+    // ================================================
+    // FIND VACANCY
+    // ================================================
 
     const vacancy = await Vacancy.findOne({
-      vacancyId: vacancyId,
+      vacancyId,
     });
 
     if (!vacancy) {
       return res.status(404).json({
         success: false,
+
         message: "Vacancy not found.",
       });
     }
 
-    // --------------------------------------------------
-    // 6. Vacancy must be published
-    // --------------------------------------------------
+    // ================================================
+    // VACANCY MUST BE PUBLISHED
+    // ================================================
 
-if (
-  vacancy.status !== "published" ||
-  vacancy.isPublished !== true
-) {
-  return res.status(400).json({
-    success: false,
-    message:
-      "This vacancy is not currently available for applications.",
-  });
-}
-    // --------------------------------------------------
-    // 7. Get provider ID FROM VACANCY
+    if (vacancy.status !== "published" || vacancy.isPublished !== true) {
+      return res.status(400).json({
+        success: false,
+
+        message: "This vacancy is not currently available for applications.",
+      });
+    }
+
+    // ================================================
+    // APPLICATION DEADLINE
+    // ================================================
     //
-    // Never accept providerId from frontend.
-    // --------------------------------------------------
+    // Example:
+    //
+    // Deadline = September 16
+    //
+    // September 16:
+    // APPLY = YES
+    //
+    // September 17:
+    // APPLY = NO
+    //
+    // ================================================
+
+    const todayStart = getTodayStartUTC();
+
+    if (
+      vacancy.applicationDeadline &&
+      vacancy.applicationDeadline < todayStart
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message: "The application deadline for this vacancy has passed.",
+      });
+    }
+
+    // ================================================
+    // PROVIDER ID FROM VACANCY
+    //
+    // NEVER accept provider ID from frontend.
+    // ================================================
 
     const providerId = vacancy.registerId;
 
     if (!providerId) {
       return res.status(500).json({
         success: false,
+
         message: "Vacancy provider information is missing.",
       });
     }
 
-    // --------------------------------------------------
-    // 8. Prevent duplicate application
-    // --------------------------------------------------
+    // ================================================
+    // DUPLICATE APPLICATION CHECK
+    // ================================================
 
     const existingApplication = await Application.findOne({
       seeker_id: seekerId,
-      vacancy_id: vacancyId,
+
+      vacancy_id: vacancy.vacancyId,
     });
 
     if (existingApplication) {
       return res.status(409).json({
         success: false,
+
         message: "You have already applied for this vacancy.",
       });
     }
 
-    // --------------------------------------------------
-    // 9. Generate application ID
-    // --------------------------------------------------
+    // ================================================
+    // GENERATE APPLICATION ID
+    // ================================================
 
     const applicationId = generateApplicationId();
 
-    // --------------------------------------------------
-    // Generate permanent application-specific resume
-    // --------------------------------------------------
+    // ================================================
+    // GENERATE APPLICATION-SPECIFIC RESUME
+    // ================================================
 
     const generatedResume = await generateResumePdf(seeker, {
       type: "application",
+
       applicationId,
     });
 
     applicationResumePath = generatedResume.absolutePath;
 
-    // --------------------------------------------------
-    // 10. Capture professional profile snapshot
-    // --------------------------------------------------
+    // ================================================
+    // BUILD PROFILE SNAPSHOT
+    // ================================================
 
     const profileSnapshot = buildProfileSnapshot(seeker);
 
-    // Use application-specific resume,
-    // not the seeker's temporary/latest resume
     profileSnapshot.generated_resume_file = generatedResume.relativePath;
 
-    // --------------------------------------------------
-    // 11. Create application
-    //
-    // IMPORTANT:
-    // It goes to Admin first.
-    // Provider cannot see it yet.
-    // --------------------------------------------------
+    // ================================================
+    // CREATE APPLICATION
+    // ================================================
 
     const application = await Application.create({
       application_id: applicationId,
@@ -440,7 +610,7 @@ if (
 
       provider_id: providerId,
 
-      cover_letter: coverLetter || null,
+      cover_letter: coverLetter?.trim() ? coverLetter.trim() : null,
 
       profile_snapshot: profileSnapshot,
 
@@ -449,9 +619,9 @@ if (
       applied_at: new Date(),
     });
 
-    // --------------------------------------------------
-    // 12. Return safe response
-    // --------------------------------------------------
+    // ================================================
+    // SUCCESS
+    // ================================================
 
     return res.status(201).json({
       success: true,
@@ -472,37 +642,59 @@ if (
   } catch (error) {
     console.error("Apply for vacancy error:", error);
 
-    // If PDF was generated but application creation failed,
-    // remove the orphan application resume.
+    // ================================================
+    // REMOVE ORPHAN APPLICATION RESUME
+    // ================================================
+
     if (applicationResumePath && fs.existsSync(applicationResumePath)) {
-      fs.unlinkSync(applicationResumePath);
+      try {
+        fs.unlinkSync(applicationResumePath);
+      } catch (cleanupError) {
+        console.error("Application resume cleanup error:", cleanupError);
+      }
     }
 
-    // Duplicate protection from MongoDB unique index
+    // ================================================
+    // DUPLICATE APPLICATION
+    // ================================================
+
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
+
         message: "You have already applied for this vacancy.",
       });
     }
 
+    // ================================================
+    // MONGOOSE VALIDATION
+    // ================================================
+
     if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
+
         message: error.message,
       });
     }
 
+    // ================================================
+    // SERVER ERROR
+    // ================================================
+
     return res.status(500).json({
       success: false,
+
       message: "Failed to submit application.",
     });
   }
 };
 
 // ======================================================
-// GET LOGGED-IN SEEKER APPLICATIONS
+// GET MY APPLICATIONS
+//
 // GET /api/seekers/applications
+//
 // ======================================================
 
 exports.getMyApplications = async (req, res) => {
@@ -510,6 +702,10 @@ exports.getMyApplications = async (req, res) => {
     const seekerId = req.user.seeker_id;
 
     const { status } = req.query;
+
+    // ================================================
+    // FILTER
+    // ================================================
 
     const filter = {
       seeker_id: seekerId,
@@ -519,115 +715,222 @@ exports.getMyApplications = async (req, res) => {
       filter.status = status;
     }
 
+    // ================================================
+    // APPLICATIONS
+    // ================================================
+
     const applications = await Application.find(filter).sort({
       applied_at: -1,
     });
 
+    // ================================================
+    // GET RELATED VACANCIES
+    // ================================================
+
+    const vacancyIds = [
+      ...new Set(applications.map((application) => application.vacancy_id)),
+    ];
+
+    const vacancies =
+      vacancyIds.length > 0
+        ? await Vacancy.find({
+            vacancyId: {
+              $in: vacancyIds,
+            },
+          })
+        : [];
+
+    // ================================================
+    // CREATE VACANCY MAP
+    // ================================================
+
+    const vacancyMap = new Map(
+      vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
+    );
+
+    // ================================================
+    // COMBINE APPLICATION + SAFE VACANCY
+    // ================================================
+
+    const data = applications.map((application) => ({
+      ...toSeekerApplication(application),
+
+      vacancy: toSeekerVacancySummary(vacancyMap.get(application.vacancy_id)),
+    }));
+
+    // ================================================
+    // RESPONSE
+    // ================================================
+
     return res.status(200).json({
       success: true,
-      count: applications.length,
-      data: applications.map(toSeekerApplication),
+
+      count: data.length,
+
+      data,
     });
   } catch (error) {
     console.error("Get seeker applications error:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to get applications.",
     });
   }
 };
 
 // ======================================================
-// GET ONE LOGGED-IN SEEKER APPLICATION
-// GET /api/seekers/applications/:application_id
+// GET ONE APPLICATION
+//
+// GET
+// /api/seekers/applications/:application_id
+//
 // ======================================================
 
 exports.getMyApplicationById = async (req, res) => {
   try {
     const seekerId = req.user.seeker_id;
+
     const { application_id } = req.params;
+
+    // ================================================
+    // FIND APPLICATION
+    // ================================================
 
     const application = await Application.findOne({
       application_id,
+
       seeker_id: seekerId,
     });
 
     if (!application) {
       return res.status(404).json({
         success: false,
+
         message: "Application not found.",
       });
     }
 
+    // ================================================
+    // RELATED VACANCY
+    // ================================================
+
+    const vacancy = await Vacancy.findOne({
+      vacancyId: application.vacancy_id,
+    });
+
+    // ================================================
+    // RESPONSE
+    // ================================================
+
     return res.status(200).json({
       success: true,
-      data: toSeekerApplication(application),
+
+      data: {
+        ...toSeekerApplication(application),
+
+        vacancy: toSeekerVacancySummary(vacancy),
+      },
     });
   } catch (error) {
-    console.error(
-      "Get seeker application error:",
-      error,
-    );
+    console.error("Get seeker application error:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to get application.",
     });
   }
 };
 
 // ======================================================
-// VIEW RESUME ATTACHED TO APPLICATION
-// GET /api/seekers/applications/:application_id/resume
+// VIEW APPLICATION RESUME
+//
+// GET
+// /api/seekers/applications/:application_id/resume
+//
 // ======================================================
 
 exports.getMyApplicationResume = async (req, res) => {
   try {
     const seekerId = req.user.seeker_id;
+
     const { application_id } = req.params;
 
-    // Find application AND confirm it belongs
-    // to the logged-in seeker.
+    // ================================================
+    // FIND APPLICATION OWNED BY SEEKER
+    // ================================================
+
     const application = await Application.findOne({
       application_id,
+
       seeker_id: seekerId,
     });
 
     if (!application) {
       return res.status(404).json({
         success: false,
+
         message: "Application not found.",
       });
     }
+
+    // ================================================
+    // GET STORED RESUME PATH
+    // ================================================
 
     const resumePath = application.profile_snapshot?.generated_resume_file;
 
     if (!resumePath) {
       return res.status(404).json({
         success: false,
+
         message: "No resume is attached to this application.",
       });
     }
 
-    // Only allow application-specific resumes here.
+    // ================================================
+    // SECURITY
+    //
+    // Only application-generated resumes are allowed.
+    // ================================================
+
     if (!resumePath.startsWith("application-resumes/")) {
       return res.status(404).json({
         success: false,
+
         message: "Application resume is not available.",
       });
     }
 
+    // ================================================
+    // FILE
+    // ================================================
+
     const fileName = path.basename(resumePath);
 
-    const absolutePath = path.join(APPLICATION_RESUME_DIR, fileName);
+    const absolutePath = path.join(
+      APPLICATION_RESUME_DIR,
+
+      fileName,
+    );
+
+    // ================================================
+    // FILE EXISTS
+    // ================================================
 
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({
         success: false,
+
         message: "Application resume file not found.",
       });
     }
+
+    // ================================================
+    // SEND PDF
+    // ================================================
 
     res.setHeader("Content-Type", "application/pdf");
 
@@ -639,6 +942,7 @@ exports.getMyApplicationResume = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to get application resume.",
     });
   }

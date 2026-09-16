@@ -1,181 +1,316 @@
-const Vacancy = require(
-  "../../models/providers/vacancySchema",
-);
+const Vacancy = require("../../models/providers/vacancySchema");
 
-const Application = require(
-  "../../models/applications/applicationSchema",
-);
+const Application = require("../../models/applications/applicationSchema");
+
+// ======================================================
+// GET START OF TODAY
+// ======================================================
+//
+// applicationDeadline is stored as a date such as:
+//
+// 2026-09-16T00:00:00.000Z
+//
+// We treat that as valid for the whole calendar day.
+//
+// Example:
+//
+// Deadline: September 16
+//
+// September 16 -> AVAILABLE
+// September 17 -> EXPIRED
+//
+// ======================================================
+
+const getTodayStartUTC = () => {
+  const today = new Date();
+
+  today.setUTCHours(0, 0, 0, 0);
+
+  return today;
+};
 
 // ======================================================
 // SEEKER-SAFE VACANCY FORMAT
 // ======================================================
+//
+// IMPORTANT:
+//
+// Never expose:
+//
+// - registerId
+// - contactPerson
+// - contactPersonKana
+// - contactEmail
+// - workLocationDetail
+// - reviewedAt
+// - rejectionReason
+//
+// ======================================================
 
 const toPublicVacancy = (vacancy) => {
   return {
+    // ==================================================
+    // ID
+    // ==================================================
+
     vacancyId: vacancy.vacancyId,
 
+    // ==================================================
+    // COMPANY
+    // ==================================================
+
+    companyName: vacancy.companyName,
+
+    companyNameKana: vacancy.companyNameKana,
+
+    // ==================================================
+    // POSITION
+    // ==================================================
+
     title: vacancy.title,
+
     titleKana: vacancy.titleKana,
 
-    employmentType:
-      vacancy.employmentType,
+    employmentType: vacancy.employmentType,
 
-    numberOfPeople:
-      vacancy.numberOfPeople,
+    numberOfPeople: vacancy.numberOfPeople,
 
-    jobDescription:
-      vacancy.jobDescription,
+    // ==================================================
+    // JOB DESCRIPTION
+    // ==================================================
 
-    responsibilities:
-      vacancy.responsibilities,
+    jobDescription: vacancy.jobDescription,
 
-    requiredSkills:
-      vacancy.requiredSkills,
+    responsibilities: vacancy.responsibilities,
 
-    preferredSkills:
-      vacancy.preferredSkills,
+    // ==================================================
+    // REQUIREMENTS
+    // ==================================================
 
-    requiredEducation:
-      vacancy.requiredEducation,
+    requiredSkills: vacancy.requiredSkills,
 
-    requiredExperience:
-      vacancy.requiredExperience,
+    preferredSkills: vacancy.preferredSkills,
 
-    japaneseLevel:
-      vacancy.japaneseLevel,
+    requiredEducation: vacancy.requiredEducation,
 
-    workLocation:
-      vacancy.workLocation,
+    requiredExperience: vacancy.requiredExperience,
 
-    salaryMin:
-      vacancy.salaryMin,
+    japaneseLevel: vacancy.japaneseLevel,
 
-    salaryMax:
-      vacancy.salaryMax,
+    // ==================================================
+    // LOCATION
+    // ==================================================
 
-    benefits:
-      vacancy.benefits || [],
+    workLocation: vacancy.workLocation,
 
-    insurance:
-      vacancy.insurance || [],
+    remoteWork: vacancy.remoteWork,
 
-    status:
-      vacancy.status,
+    // ==================================================
+    // SALARY
+    // ==================================================
+
+    salaryMin: vacancy.salaryMin,
+
+    salaryMax: vacancy.salaryMax,
+
+    salaryNote: vacancy.salaryNote,
+
+    // ==================================================
+    // WORK CONDITIONS
+    // ==================================================
+
+    workHours: vacancy.workHours,
+
+    breakTime: vacancy.breakTime,
+
+    overtime: vacancy.overtime,
+
+    holidays: vacancy.holidays,
+
+    // ==================================================
+    // BENEFITS
+    // ==================================================
+
+    benefits: vacancy.benefits || [],
+
+    insurance: vacancy.insurance || [],
+
+    trialPeriod: vacancy.trialPeriod,
+
+    // ==================================================
+    // APPLICATION
+    // ==================================================
+
+    applicationDeadline: vacancy.applicationDeadline,
+
+    startDate: vacancy.startDate,
+
+    selectionProcess: vacancy.selectionProcess,
+
+    // ==================================================
+    // PUBLIC STATUS
+    // ==================================================
+
+    status: vacancy.status,
+
+    createdAt: vacancy.createdAt,
   };
 };
 
 // ======================================================
-// GET AVAILABLE PUBLISHED VACANCIES
+// GET AVAILABLE VACANCIES
+//
 // GET /api/seekers/vacancies
 //
-// Excludes vacancies already applied to by this seeker.
+// CONDITIONS:
+//
+// 1. Published
+// 2. isPublished = true
+// 3. Deadline has not passed
+// 4. Seeker has not already applied
+//
 // ======================================================
 
-exports.getPublishedVacancies = async (
-  req,
-  res,
-) => {
+exports.getPublishedVacancies = async (req, res) => {
   try {
-    // Logged-in seeker from JWT
     const seekerId = req.user.seeker_id;
 
-    // --------------------------------------------------
-    // Find vacancy IDs already applied to
-    // --------------------------------------------------
+    // ================================================
+    // GET VACANCIES ALREADY APPLIED TO
+    // ================================================
 
-    const appliedVacancyIds =
-      await Application.distinct(
-        "vacancy_id",
+    const appliedVacancyIds = await Application.distinct("vacancy_id", {
+      seeker_id: seekerId,
+    });
+
+    // ================================================
+    // TODAY START
+    // ================================================
+
+    const todayStart = getTodayStartUTC();
+
+    // ================================================
+    // FIND AVAILABLE VACANCIES
+    // ================================================
+
+    const vacancies = await Vacancy.find({
+      status: "published",
+
+      isPublished: true,
+
+      vacancyId: {
+        $nin: appliedVacancyIds,
+      },
+
+      $or: [
+        // ------------------------------------------
+        // No deadline
+        // ------------------------------------------
+
         {
-          seeker_id: seekerId,
+          applicationDeadline: null,
         },
-      );
 
-    // --------------------------------------------------
-    // Return only:
-    // - published vacancies
-    // - actually public vacancies
-    // - vacancies not already applied to
-    // --------------------------------------------------
+        // ------------------------------------------
+        // Deadline today or future
+        // ------------------------------------------
 
-    const vacancies =
-      await Vacancy.find({
-        status: "published",
-        isPublished: true,
-
-        vacancyId: {
-          $nin: appliedVacancyIds,
+        {
+          applicationDeadline: {
+            $gte: todayStart,
+          },
         },
-      }).sort({
-        createdAt: -1,
-      });
+      ],
+    }).sort({
+      createdAt: -1,
+    });
+
+    // ================================================
+    // RESPONSE
+    // ================================================
 
     return res.status(200).json({
       success: true,
+
       count: vacancies.length,
 
-      data: vacancies.map(
-        toPublicVacancy,
-      ),
+      data: vacancies.map(toPublicVacancy),
     });
   } catch (error) {
-    console.error(
-      "Get published vacancies error:",
-      error,
-    );
+    console.error("Get published vacancies error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to get vacancies.",
+
+      message: "Failed to get vacancies.",
     });
   }
 };
 
-
 // ======================================================
 // GET ONE PUBLISHED VACANCY
+//
 // GET /api/seekers/vacancies/:vacancyId
+//
 // ======================================================
 
-exports.getPublishedVacancyById =
-  async (req, res) => {
-    try {
-      const { vacancyId } =
-        req.params;
+exports.getPublishedVacancyById = async (req, res) => {
+  try {
+    const { vacancyId } = req.params;
 
-      const vacancy =
-        await Vacancy.findOne({
-          vacancyId,
-          status: "published",
-          isPublished: true,
-        });
+    // ================================================
+    // FIND VACANCY
+    // ================================================
 
-      if (!vacancy) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Vacancy not found.",
-        });
-      }
+    const vacancy = await Vacancy.findOne({
+      vacancyId,
 
-      return res.status(200).json({
-        success: true,
-        data:
-          toPublicVacancy(
-            vacancy,
-          ),
-      });
-    } catch (error) {
-      console.error(
-        "Get vacancy error:",
-        error,
-      );
+      status: "published",
 
-      return res.status(500).json({
+      isPublished: true,
+    });
+
+    if (!vacancy) {
+      return res.status(404).json({
         success: false,
-        message:
-          "Failed to get vacancy.",
+
+        message: "Vacancy not found.",
       });
     }
-  };
+
+    // ================================================
+    // CHECK DEADLINE
+    // ================================================
+
+    const todayStart = getTodayStartUTC();
+
+    if (
+      vacancy.applicationDeadline &&
+      vacancy.applicationDeadline < todayStart
+    ) {
+      return res.status(410).json({
+        success: false,
+
+        message: "The application deadline for this vacancy has passed.",
+      });
+    }
+
+    // ================================================
+    // RESPONSE
+    // ================================================
+
+    return res.status(200).json({
+      success: true,
+
+      data: toPublicVacancy(vacancy),
+    });
+  } catch (error) {
+    console.error("Get published vacancy error:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to get vacancy.",
+    });
+  }
+};

@@ -20,6 +20,8 @@ const seekerResumeRoutes = require("./routes/seekers/resumeRoutes");
 
 const seekerVacancyRoutes = require("./routes/seekers/vacancyRoutes");
 const seekerDashboardRoutes = require("./routes/seekers/dashboardRoutes");
+const Vacancy = require("./models/providers/vacancySchema");
+
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -98,9 +100,6 @@ app.use("/api/seekers/vacancies", seekerVacancyRoutes);
 
 app.use("/api/seekers/dashboard", seekerDashboardRoutes);
 
-// Existing provider profile routes
-app.use("/api/auth", registerRoutes);
-
 // ======================================================
 // NOT FOUND
 // ======================================================
@@ -135,15 +134,69 @@ const startServer = async () => {
       throw new Error("MONGO_URI missing in .env");
     }
 
+    // ================================================
+    // CONNECT DATABASE
+    // ================================================
+
     await mongoose.connect(process.env.MONGO_URI);
 
     console.log("✅ MongoDB connected");
+
+    // ================================================
+    // FIX OLD VACANCY INDEX
+    // ================================================
+    //
+    // Previous vacancy schema used:
+    //
+    // vacancy_id
+    //
+    // Current vacancy schema uses:
+    //
+    // vacancyId
+    //
+    // If old unique index still exists,
+    // MongoDB throws:
+    //
+    // E11000 duplicate key
+    // vacancy_id: null
+    //
+    // ================================================
+
+    const indexes = await Vacancy.collection.indexes();
+
+    console.log(
+      "Current vacancy indexes:",
+      indexes.map((index) => index.name),
+    );
+
+    const oldVacancyIndex = indexes.find(
+      (index) => index.name === "vacancy_id_1",
+    );
+
+    if (oldVacancyIndex) {
+      await Vacancy.collection.dropIndex("vacancy_id_1");
+
+      console.log("✅ Removed old vacancy_id_1 index");
+    }
+
+    // ================================================
+    // MAKE SURE CURRENT SCHEMA INDEXES EXIST
+    // ================================================
+
+    await Vacancy.init();
+
+    console.log("✅ Vacancy indexes ready");
+
+    // ================================================
+    // START SERVER
+    // ================================================
 
     app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
     });
   } catch (error) {
-    console.error("❌ Startup error:", error.message);
+    console.error("❌ Startup error:", error);
+
     process.exit(1);
   }
 };
