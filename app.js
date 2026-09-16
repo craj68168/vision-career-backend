@@ -49,11 +49,14 @@ const adminApplicationRoutes = require("./routes/admin/applicationRoutes");
 
 const adminVacancyRoutes = require("./routes/admin/vacancyRoutes");
 
+const adminProviderRoutes = require("./routes/admin/providerRoutes");
+
 // ======================================================
 // STARTUP MODELS
 // ======================================================
 
 const Vacancy = require("./models/providers/vacancySchema");
+const Profile = require("./models/providers/profileSchema");
 
 // ======================================================
 // STARTUP UTILITIES
@@ -190,6 +193,12 @@ app.use("/api/admin/applications", adminApplicationRoutes);
 app.use("/api/admin/vacancies", adminVacancyRoutes);
 
 // ======================================================
+// ADMIN PROVIDERS
+// ======================================================
+
+app.use("/api/admin/providers", adminProviderRoutes);
+
+// ======================================================
 // NOT FOUND
 // ======================================================
 
@@ -225,27 +234,26 @@ const startServer = async () => {
       throw new Error("MONGO_URI missing in .env");
     }
 
-    // ==================================================
-    // DATABASE
-    // ==================================================
+    // ======================================================
+    // CONNECT DATABASE
+    // ======================================================
 
     await mongoose.connect(process.env.MONGO_URI);
 
     console.log("✅ MongoDB connected");
 
-    // ==================================================
-    // CLEAN OLD VACANCY INDEX
-    // ==================================================
+    // ======================================================
+    // LEGACY VACANCY INDEX CLEANUP
+    // ======================================================
 
-    const indexes = await Vacancy.collection.indexes();
+    const vacancyIndexes = await Vacancy.collection.indexes();
 
     console.log(
       "Current vacancy indexes:",
-
-      indexes.map((index) => index.name),
+      vacancyIndexes.map((index) => index.name),
     );
 
-    const oldVacancyIndex = indexes.find(
+    const oldVacancyIndex = vacancyIndexes.find(
       (index) => index.name === "vacancy_id_1",
     );
 
@@ -255,23 +263,62 @@ const startServer = async () => {
       console.log("✅ Removed old vacancy_id_1 index");
     }
 
-    // ==================================================
+    // ======================================================
     // CURRENT VACANCY INDEXES
-    // ==================================================
+    // ======================================================
 
     await Vacancy.init();
 
     console.log("✅ Vacancy indexes ready");
 
-    // ==================================================
-    // CREATE INITIAL ADMIN IF NEEDED
-    // ==================================================
+    // ======================================================
+    // LEGACY PROFILE INDEX CLEANUP
+    // ======================================================
+    //
+    // OLD PROFILE MODEL:
+    // user
+    //
+    // CURRENT PROFILE MODEL:
+    // registerId
+    //
+    // Old unique index:
+    // user_1
+    //
+    // causes:
+    //
+    // E11000 duplicate key
+    // user: null
+    //
+    // ======================================================
 
-    await bootstrapAdmin();
+    const profileIndexes = await Profile.collection.indexes();
 
-    // ==================================================
+    console.log(
+      "Current profile indexes:",
+      profileIndexes.map((index) => index.name),
+    );
+
+    const oldProfileUserIndex = profileIndexes.find(
+      (index) => index.name === "user_1",
+    );
+
+    if (oldProfileUserIndex) {
+      await Profile.collection.dropIndex("user_1");
+
+      console.log("✅ Removed old profile user_1 index");
+    }
+
+    // ======================================================
+    // CURRENT PROFILE INDEXES
+    // ======================================================
+
+    await Profile.init();
+
+    console.log("✅ Profile indexes ready");
+
+    // ======================================================
     // START SERVER
-    // ==================================================
+    // ======================================================
 
     app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
