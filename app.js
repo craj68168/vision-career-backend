@@ -16,9 +16,10 @@ const seekerAuthRoutes = require("./routes/seekers/authRoutes");
 const seekerProfileRoutes = require("./routes/seekers/profileRoutes");
 
 const seekerApplicationRoutes = require("./routes/seekers/applicationRoutes");
-
 const seekerResumeRoutes = require("./routes/seekers/resumeRoutes");
 
+const seekerVacancyRoutes = require("./routes/seekers/vacancyRoutes");
+const seekerDashboardRoutes = require("./routes/seekers/dashboardRoutes");
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -91,6 +92,11 @@ app.use("/api/providers/profile", profileRoutes);
 app.use("/api/seekers/profile", seekerProfileRoutes);
 
 app.use("/api/seekers/applications", seekerApplicationRoutes);
+
+// Existing SeekerSide vacancy routes
+app.use("/api/seekers/vacancies", seekerVacancyRoutes);
+
+app.use("/api/seekers/dashboard", seekerDashboardRoutes);
 
 // Existing provider profile routes
 app.use("/api/auth", registerRoutes);

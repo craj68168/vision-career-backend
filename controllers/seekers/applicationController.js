@@ -18,6 +18,199 @@ const Vacancy = require("../../models/providers/vacancySchema");
 // Example: APP-A12B34CD
 // ======================================================
 
+const APPLICATION_STEPS = [
+  {
+    key: "PENDING_ADMIN_APPROVAL",
+    label: "Application Submitted",
+  },
+  {
+    key: "SENT_TO_PROVIDER",
+    label: "Sent to Employer",
+  },
+  {
+    key: "UNDER_REVIEW",
+    label: "Under Review",
+  },
+  {
+    key: "INTERVIEW",
+    label: "Interview",
+  },
+  {
+    key: "SELECTED",
+    label: "Selected",
+  },
+  {
+    key: "HIRED",
+    label: "Hired",
+  },
+];
+
+// ======================================================
+// BUILD APPLICATION STATUS TRACKING
+// ======================================================
+
+const getStatusTracking = (status) => {
+  // Admin rejected
+  if (status === "ADMIN_REJECTED") {
+    return {
+      current_status: status,
+      current_label: "Not Approved",
+      outcome: "rejected",
+
+      steps: [
+        {
+          key: "PENDING_ADMIN_APPROVAL",
+          label: "Application Submitted",
+          state: "completed",
+        },
+        {
+          key: "ADMIN_REJECTED",
+          label: "Not Approved",
+          state: "rejected",
+        },
+      ],
+    };
+  }
+
+  // Provider rejected
+  if (status === "REJECTED") {
+    return {
+      current_status: status,
+      current_label: "Not Selected",
+      outcome: "rejected",
+
+      steps: [
+        {
+          key: "PENDING_ADMIN_APPROVAL",
+          label: "Application Submitted",
+          state: "completed",
+        },
+        {
+          key: "SENT_TO_PROVIDER",
+          label: "Sent to Employer",
+          state: "completed",
+        },
+        {
+          key: "REJECTED",
+          label: "Not Selected",
+          state: "rejected",
+        },
+      ],
+    };
+  }
+
+  const currentIndex = APPLICATION_STEPS.findIndex(
+    (step) => step.key === status,
+  );
+
+  const steps = APPLICATION_STEPS.map((step, index) => {
+    let state = "pending";
+
+    if (index < currentIndex) {
+      state = "completed";
+    }
+
+    if (index === currentIndex) {
+      state =
+        status === "HIRED"
+          ? "completed"
+          : "current";
+    }
+
+    return {
+      ...step,
+      state,
+    };
+  });
+
+  const currentStep =
+    APPLICATION_STEPS[currentIndex];
+
+  return {
+    current_status: status,
+
+    current_label:
+      currentStep?.label || status,
+
+    outcome:
+      status === "HIRED"
+        ? "completed"
+        : "in_progress",
+
+    steps,
+  };
+};
+
+// ======================================================
+// SAFE APPLICATION RESPONSE FOR SEEKER
+// ======================================================
+
+const toSeekerApplication = (application) => {
+  const data = application.toObject
+    ? application.toObject()
+    : application;
+
+  return {
+    application_id: data.application_id,
+    vacancy_id: data.vacancy_id,
+
+    cover_letter: data.cover_letter,
+
+    profile_snapshot: {
+      name:
+        data.profile_snapshot?.name,
+
+      nationality:
+        data.profile_snapshot?.nationality,
+
+      visa_type:
+        data.profile_snapshot?.visa_type,
+
+      visa_expiry_date:
+        data.profile_snapshot?.visa_expiry_date,
+
+      japanese_level:
+        data.profile_snapshot?.japanese_level,
+
+      skills:
+        data.profile_snapshot?.skills || [],
+
+      desired_job:
+        data.profile_snapshot?.desired_job,
+
+      desired_location:
+        data.profile_snapshot?.desired_location,
+
+      education:
+        data.profile_snapshot?.education || [],
+
+      employment_history:
+        data.profile_snapshot?.employment_history || [],
+    },
+
+    resume_available: Boolean(
+      data.profile_snapshot?.generated_resume_file,
+    ),
+
+    status: data.status,
+
+    status_tracking:
+      getStatusTracking(data.status),
+
+    admin_rejection_reason:
+      data.status === "ADMIN_REJECTED"
+        ? data.admin_rejection_reason
+        : null,
+
+    admin_reviewed_at:
+      data.admin_reviewed_at || null,
+
+    applied_at: data.applied_at,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
+};
+
 const generateApplicationId = () => {
   return `APP-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 };
@@ -316,16 +509,24 @@ exports.getMyApplications = async (req, res) => {
   try {
     const seekerId = req.user.seeker_id;
 
-    const applications = await Application.find({
+    const { status } = req.query;
+
+    const filter = {
       seeker_id: seekerId,
-    }).sort({
+    };
+
+    if (status) {
+      filter.status = status;
+    }
+
+    const applications = await Application.find(filter).sort({
       applied_at: -1,
     });
 
     return res.status(200).json({
       success: true,
       count: applications.length,
-      data: applications,
+      data: applications.map(toSeekerApplication),
     });
   } catch (error) {
     console.error("Get seeker applications error:", error);
@@ -345,7 +546,6 @@ exports.getMyApplications = async (req, res) => {
 exports.getMyApplicationById = async (req, res) => {
   try {
     const seekerId = req.user.seeker_id;
-
     const { application_id } = req.params;
 
     const application = await Application.findOne({
@@ -362,10 +562,13 @@ exports.getMyApplicationById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: application,
+      data: toSeekerApplication(application),
     });
   } catch (error) {
-    console.error("Get seeker application error:", error);
+    console.error(
+      "Get seeker application error:",
+      error,
+    );
 
     return res.status(500).json({
       success: false,
