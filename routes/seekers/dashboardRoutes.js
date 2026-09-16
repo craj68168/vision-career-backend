@@ -1,10 +1,9 @@
 const express = require("express");
 
 const {
-  getPublishedVacancies,
-  getPublishedVacancyById,
+  getDashboardSummary,
 } = require(
-  "../../controllers/seekers/vacancyController",
+  "../../controllers/seekers/dashboardController",
 );
 
 const seekerAuth = require(
@@ -14,15 +13,9 @@ const seekerAuth = require(
 const router = express.Router();
 
 router.get(
-  "/",
+  "/summary",
   seekerAuth,
-  getPublishedVacancies,
-);
-
-router.get(
-  "/:vacancyId",
-  seekerAuth,
-  getPublishedVacancyById,
+  getDashboardSummary,
 );
 
 module.exports = router;
