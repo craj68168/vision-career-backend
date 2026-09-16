@@ -16,13 +16,10 @@ const seekerAuthRoutes = require("./routes/seekers/authRoutes");
 const seekerProfileRoutes = require("./routes/seekers/profileRoutes");
 
 const seekerApplicationRoutes = require("./routes/seekers/applicationRoutes");
-
 const seekerResumeRoutes = require("./routes/seekers/resumeRoutes");
 
 const seekerVacancyRoutes = require("./routes/seekers/vacancyRoutes");
-
 const seekerDashboardRoutes = require("./routes/seekers/dashboardRoutes");
-
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -58,28 +55,41 @@ app.get("/", (req, res) => {
 });
 
 // ======================================================
+// SEEKER AUTH ROUTES
+// ======================================================
+app.use("/api/seekers/resume", seekerResumeRoutes);
+
+app.use("/api/seekers/auth", seekerAuthRoutes);
+// other provider routes
+// app.use("/api/profile", profileRoutes);
+
+// ======================================================
 // PROVIDER ROUTES
 // ======================================================
 
-// ✅ ONLY ONE AUTH ROUTE
 app.use("/api/auth/providers", registerRoutes);
-
-
-// other provider routes
-// app.use("/api/profile", profileRoutes);
-app.use("/api/providers", profileRoutes);
 app.use("/api/auth/providers", forgotRoutes);
-app.use("/api/providers", vacancyRoutes);
-app.use("/api/providers", recruitRoutes);
+// ======================================================
+// PROVIDER VACANCIES
+// ======================================================
+app.use("/api/providers/vacancies", vacancyRoutes);
+
+// ======================================================
+// PROVIDER RECRUIT / PLACEMENT REQUESTS
+// ======================================================
+app.use("/api/providers/recruits", recruitRoutes);
+
+// ======================================================
+// PROVIDER PROFILE
+// ======================================================
+
+app.use("/api/providers/profile", profileRoutes);
 
 // ======================================================
 // SEEKER ROUTES
 // ======================================================
 
-app.use("/api/seekers/auth", seekerAuthRoutes);
 app.use("/api/seekers/profile", seekerProfileRoutes);
-
-app.use("/api/seekers/resume", seekerResumeRoutes);
 
 app.use("/api/seekers/applications", seekerApplicationRoutes);
 
@@ -90,7 +100,6 @@ app.use("/api/seekers/dashboard", seekerDashboardRoutes);
 
 // Existing provider profile routes
 app.use("/api/auth", registerRoutes);
-app.use("/api/providers", profileRoutes);
 
 // ======================================================
 // NOT FOUND

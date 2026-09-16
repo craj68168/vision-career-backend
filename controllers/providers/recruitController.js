@@ -24,8 +24,24 @@ exports.createRecruit = async (req, res) => {
 
 // GET ALL
 exports.getAllRecruits = async (req, res) => {
-  const data = await Recruit.find();
-  res.json(data);
+  try {
+    const data = await Recruit.find({
+      company_id: req.registerId,
+    }).sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to load placement requests",
+    });
+  }
 };
 
 // GET ONE
@@ -41,7 +57,7 @@ exports.updateRecruit = async (req, res) => {
   const data = await Recruit.findOneAndUpdate(
     { recruitId: req.params.recruitId },
     req.body,
-    { new: true }
+    { new: true },
   );
   res.json(data);
 };
@@ -59,7 +75,7 @@ exports.approveRecruit = async (req, res) => {
   const data = await Recruit.findOneAndUpdate(
     { recruitId: req.params.recruitId },
     { status: "approved" },
-    { new: true }
+    { new: true },
   );
   res.json(data);
 };
@@ -69,7 +85,7 @@ exports.rejectRecruit = async (req, res) => {
   const data = await Recruit.findOneAndUpdate(
     { recruitId: req.params.recruitId },
     { status: "rejected" },
-    { new: true }
+    { new: true },
   );
   res.json(data);
 };

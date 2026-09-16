@@ -1,178 +1,608 @@
 const Vacancy = require("../../models/providers/vacancySchema");
+
 const Register = require("../../models/providers/registerSchema");
+
 const Counter = require("../../models/providers/counterModel");
 
-// ================= SERIAL VACANCY ID =================
+// ======================================================
+// GENERATE VACANCY ID
+// ======================================================
+
 const generateVacancyId = async () => {
   const counter = await Counter.findByIdAndUpdate(
-    { _id: "vacancyId" },
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true, returnDocument: "after" }
+    {
+      _id: "vacancyId",
+    },
+
+    {
+      $inc: {
+        seq: 1,
+      },
+    },
+
+    {
+      new: true,
+      upsert: true,
+    },
   );
 
   return `V-${counter.seq.toString().padStart(6, "0")}`;
 };
 
-// ================= PUBLIC FORMAT (SEEKER SAFE) =================
-const toPublicVacancy = (v) => ({
-  vacancyId: v.vacancyId,
-  title: v.title,
-  titleKana: v.titleKana,
-  employmentType: v.employmentType,
-  numberOfPeople: v.numberOfPeople,
-  jobDescription: v.jobDescription,
-  responsibilities: v.responsibilities,
-  requiredSkills: v.requiredSkills,
-  preferredSkills: v.preferredSkills,
-  requiredEducation: v.requiredEducation,
-  requiredExperience: v.requiredExperience,
-  japaneseLevel: v.japaneseLevel,
-  workLocation: v.workLocation,
-  salaryMin: v.salaryMin,
-  salaryMax: v.salaryMax,
-  status: v.status,
-  isPublished: v.isPublished, 
+// ======================================================
+// ALLOWED PROVIDER FIELDS
+// ======================================================
+
+const VACANCY_FIELDS = [
+  "companyNameKana",
+
+  "title",
+  "titleKana",
+
+  "employmentType",
+  "numberOfPeople",
+
+  "jobDescription",
+  "responsibilities",
+
+  "requiredSkills",
+  "preferredSkills",
+  "requiredEducation",
+  "requiredExperience",
+  "japaneseLevel",
+
+  "workLocation",
+  "workLocationDetail",
+  "remoteWork",
+
+  "salaryMin",
+  "salaryMax",
+  "salaryNote",
+
+  "workHours",
+  "breakTime",
+  "overtime",
+  "holidays",
+
+  "benefits",
+  "insurance",
+  "trialPeriod",
+
+  "applicationDeadline",
+  "startDate",
+  "selectionProcess",
+
+  "contactPerson",
+  "contactPersonKana",
+  "contactEmail",
+];
+
+// ======================================================
+// CLEAN PAYLOAD
+// ======================================================
+
+const buildVacancyPayload = (body) => {
+  const payload = {};
+
+  VACANCY_FIELDS.forEach((field) => {
+    if (body[field] !== undefined) {
+      payload[field] = body[field];
+    }
+  });
+
+  return payload;
+};
+
+// ======================================================
+// PUBLIC SEEKER FORMAT
+//
+// IMPORTANT:
+// NO email
+// NO contact person
+// NO private company contact details
+// NO registerId
+// ======================================================
+
+const toPublicVacancy = (vacancy) => ({
+  vacancyId: vacancy.vacancyId,
+
+  title: vacancy.title,
+
+  titleKana: vacancy.titleKana,
+
+  employmentType: vacancy.employmentType,
+
+  numberOfPeople: vacancy.numberOfPeople,
+
+  jobDescription: vacancy.jobDescription,
+
+  responsibilities: vacancy.responsibilities,
+
+  requiredSkills: vacancy.requiredSkills,
+
+  preferredSkills: vacancy.preferredSkills,
+
+  requiredEducation: vacancy.requiredEducation,
+
+  requiredExperience: vacancy.requiredExperience,
+
+  japaneseLevel: vacancy.japaneseLevel,
+
+  workLocation: vacancy.workLocation,
+
+  /*
+   * If workLocationDetail contains
+   * exact/private location information,
+   * don't expose it to seekers.
+   */
+
+  remoteWork: vacancy.remoteWork,
+
+  salaryMin: vacancy.salaryMin,
+
+  salaryMax: vacancy.salaryMax,
+
+  salaryNote: vacancy.salaryNote,
+
+  workHours: vacancy.workHours,
+
+  breakTime: vacancy.breakTime,
+
+  overtime: vacancy.overtime,
+
+  holidays: vacancy.holidays,
+
+  benefits: vacancy.benefits || [],
+
+  insurance: vacancy.insurance || [],
+
+  trialPeriod: vacancy.trialPeriod,
+
+  applicationDeadline: vacancy.applicationDeadline,
+
+  startDate: vacancy.startDate,
+
+  selectionProcess: vacancy.selectionProcess,
+
+  status: vacancy.status,
+
+  isPublished: vacancy.isPublished,
+
+  createdAt: vacancy.createdAt,
 });
 
-// ================= CREATE VACANCY =================
+// ======================================================
+// CREATE
+// POST /api/providers/vacancies
+// ======================================================
+
 exports.createVacancy = async (req, res) => {
   try {
-    const { registerId, companyName, title } = req.body;
+    const registerId = req.registerId;
 
-    if (!registerId || !companyName || !title) {
-      return res.status(400).json({
-        message: "registerId, companyName, title required",
+    if (!registerId) {
+      return res.status(401).json({
+        status: "error",
+
+        message: "Provider authentication required",
       });
     }
 
-    const register = await Register.findOne({ registerId });
+    const register = await Register.findOne({
+      registerId,
+    });
+
     if (!register) {
-      return res.status(404).json({ message: "Register not found" });
+      return res.status(404).json({
+        status: "error",
+
+        message: "Provider account not found",
+      });
+    }
+
+    const {
+      title,
+      employmentType,
+      jobDescription,
+      workLocation,
+      contactPerson,
+      contactEmail,
+    } = req.body;
+
+    if (
+      !title ||
+      !employmentType ||
+      !jobDescription ||
+      !workLocation ||
+      !contactPerson ||
+      !contactEmail
+    ) {
+      return res.status(400).json({
+        status: "error",
+
+        message: "Please complete all required vacancy fields.",
+      });
     }
 
     const vacancyId = await generateVacancyId();
 
-    const status =
-      Object.values(req.body).every(
-        (v) => v !== "" && v !== null && v !== undefined
-      )
-        ? "pending_review"
-        : "draft";
+    const payload = buildVacancyPayload(req.body);
 
     const vacancy = await Vacancy.create({
-      ...req.body,
+      ...payload,
+
       vacancyId,
-      status,
+
+      registerId,
+
+      // Always use authenticated
+      // registered company.
+      companyName: register.companyName,
+
+      status: "pending_review",
+
+      isPublished: false,
     });
 
-    res.status(201).json({
-      message: "Vacancy created",
-      vacancy,
+    return res.status(201).json({
+      status: "success",
+
+      message: "Vacancy submitted successfully and is pending admin review.",
+
+      data: vacancy,
     });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  } catch (error) {
+    console.error("CREATE VACANCY ERROR:", error);
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        status: "error",
+
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to create vacancy",
+    });
   }
 };
 
-// ================= APPROVE =================
-exports.approveVacancy = async (req, res) => {
-  const v = await Vacancy.findOneAndUpdate(
-    { vacancyId: req.params.id },
-    { status: "approved", reviewedAt: new Date() },
-    { returnDocument: "after" }
-  );
+// ======================================================
+// PROVIDER LIST
+// GET /api/providers/vacancies
+// ======================================================
 
-  res.json(v);
-};
-
-// ================= REJECT =================
-exports.rejectVacancy = async (req, res) => {
-  const v = await Vacancy.findOneAndUpdate(
-    { vacancyId: req.params.id },
-    { status: "rejected" },
-    { returnDocument: "after" }
-  );
-
-  res.json(v);
-};
-
-// ================= PUBLISH (HIDES PRIVATE DATA) =================
-exports.publishVacancy = async (req, res) => {
-  const v = await Vacancy.findOneAndUpdate(
-    { vacancyId: req.params.id },
-    { status: "published", isPublished: true },
-    { returnDocument: "after" }
-  );
-
-  if (!v) return res.status(404).json({ message: "Not found" });
-
-  res.json({
-    message: "Published successfully",
-    vacancy: toPublicVacancy(v),
-  });
-};
-
-// ================= CLOSE =================
-exports.closeVacancy = async (req, res) => {
-  const v = await Vacancy.findOneAndUpdate(
-    { vacancyId: req.params.id },
-    { status: "closed" },
-    { returnDocument: "after" }
-  );
-
-  res.json(v);
-};
-
-// ================= GET ALL (ADMIN) =================
 exports.getAllVacancies = async (req, res) => {
-  const data = await Vacancy.find().sort({ createdAt: -1 });
-  res.json({ count: data.length, data });
+  try {
+    const registerId = req.registerId;
+
+    const data = await Vacancy.find({
+      registerId,
+    }).sort({
+      createdAt: -1,
+    });
+
+    return res.json({
+      status: "success",
+
+      count: data.length,
+
+      data,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to load vacancies",
+    });
+  }
 };
 
-// ================= PUBLIC (SEEKER) =================
+// ======================================================
+// PUBLIC SEEKER LIST
+// GET /api/providers/vacancies/public
+// ======================================================
+
 exports.getPublicVacancies = async (req, res) => {
-  const data = await Vacancy.find({
-    status: "published",
-    isPublished: true,
-  });
+  try {
+    const data = await Vacancy.find({
+      status: "published",
 
-  res.json({
-    count: data.length,
-    vacancies: data.map(toPublicVacancy),
-  });
+      isPublished: true,
+    }).sort({
+      createdAt: -1,
+    });
+
+    return res.json({
+      status: "success",
+
+      count: data.length,
+
+      data: data.map(toPublicVacancy),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to load vacancies",
+    });
+  }
 };
 
-// ================= GET BY VACANCY ID =================
+// ======================================================
+// PROVIDER SINGLE
+// ======================================================
+
 exports.getVacancyById = async (req, res) => {
-  const v = await Vacancy.findOne({ vacancyId: req.params.id });
+  try {
+    const vacancy = await Vacancy.findOne({
+      vacancyId: req.params.id,
 
-  if (!v) return res.status(404).json({ message: "Not found" });
+      registerId: req.registerId,
+    });
 
-  res.json(v);
+    if (!vacancy) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Vacancy not found",
+      });
+    }
+
+    return res.json({
+      status: "success",
+
+      data: vacancy,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to load vacancy",
+    });
+  }
 };
 
-// ================= UPDATE =================
-exports.updateVacancy = async (req, res) => {
-  delete req.body.vacancyId;
-  delete req.body.registerId;
+// ======================================================
+// PROVIDER UPDATE
+// ======================================================
 
-  const v = await Vacancy.findOneAndUpdate(
-    { vacancyId: req.params.id },
-    req.body,
-    { returnDocument: "after" }
+exports.updateVacancy = async (req, res) => {
+  try {
+    const payload = buildVacancyPayload(req.body);
+
+    /*
+     * Editing a vacancy should
+     * send it back for review.
+     */
+
+    payload.status = "pending_review";
+
+    payload.isPublished = false;
+
+    const vacancy = await Vacancy.findOneAndUpdate(
+      {
+        vacancyId: req.params.id,
+
+        registerId: req.registerId,
+      },
+
+      {
+        $set: payload,
+      },
+
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    if (!vacancy) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Vacancy not found",
+      });
+    }
+
+    return res.json({
+      status: "success",
+
+      message: "Vacancy updated and submitted for review.",
+
+      data: vacancy,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to update vacancy",
+    });
+  }
+};
+
+// ======================================================
+// PROVIDER DELETE
+// ======================================================
+
+exports.deleteVacancy = async (req, res) => {
+  try {
+    const vacancy = await Vacancy.findOneAndDelete({
+      vacancyId: req.params.id,
+
+      registerId: req.registerId,
+    });
+
+    if (!vacancy) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Vacancy not found",
+      });
+    }
+
+    return res.json({
+      status: "success",
+
+      message: "Vacancy deleted",
+
+      vacancyId: vacancy.vacancyId,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to delete vacancy",
+    });
+  }
+};
+
+// ======================================================
+// APPROVE
+// ======================================================
+
+exports.approveVacancy = async (req, res) => {
+  const vacancy = await Vacancy.findOneAndUpdate(
+    {
+      vacancyId: req.params.id,
+    },
+
+    {
+      status: "approved",
+
+      reviewedAt: new Date(),
+    },
+
+    {
+      new: true,
+    },
   );
 
-  res.json(v);
+  if (!vacancy) {
+    return res.status(404).json({
+      status: "error",
+
+      message: "Vacancy not found",
+    });
+  }
+
+  return res.json({
+    status: "success",
+    data: vacancy,
+  });
 };
 
-// ================= DELETE =================
-exports.deleteVacancy = async (req, res) => {
-  const v = await Vacancy.findOneAndDelete({
-    vacancyId: req.params.id,
-  });
+// ======================================================
+// REJECT
+// ======================================================
 
-  res.json({
-    message: "Deleted",
-    vacancyId: v?.vacancyId,
+exports.rejectVacancy = async (req, res) => {
+  const vacancy = await Vacancy.findOneAndUpdate(
+    {
+      vacancyId: req.params.id,
+    },
+
+    {
+      status: "rejected",
+
+      isPublished: false,
+
+      rejectionReason: req.body.rejectionReason || null,
+
+      reviewedAt: new Date(),
+    },
+
+    {
+      new: true,
+    },
+  );
+
+  if (!vacancy) {
+    return res.status(404).json({
+      status: "error",
+
+      message: "Vacancy not found",
+    });
+  }
+
+  return res.json({
+    status: "success",
+    data: vacancy,
+  });
+};
+
+// ======================================================
+// PUBLISH
+// ======================================================
+
+exports.publishVacancy = async (req, res) => {
+  const vacancy = await Vacancy.findOneAndUpdate(
+    {
+      vacancyId: req.params.id,
+    },
+
+    {
+      status: "published",
+
+      isPublished: true,
+    },
+
+    {
+      new: true,
+    },
+  );
+
+  if (!vacancy) {
+    return res.status(404).json({
+      status: "error",
+
+      message: "Vacancy not found",
+    });
+  }
+
+  return res.json({
+    status: "success",
+
+    message: "Published successfully",
+
+    data: toPublicVacancy(vacancy),
+  });
+};
+
+// ======================================================
+// CLOSE
+// ======================================================
+
+exports.closeVacancy = async (req, res) => {
+  const vacancy = await Vacancy.findOneAndUpdate(
+    {
+      vacancyId: req.params.id,
+    },
+
+    {
+      status: "closed",
+
+      isPublished: false,
+    },
+
+    {
+      new: true,
+    },
+  );
+
+  if (!vacancy) {
+    return res.status(404).json({
+      status: "error",
+
+      message: "Vacancy not found",
+    });
+  }
+
+  return res.json({
+    status: "success",
+    data: vacancy,
   });
 };

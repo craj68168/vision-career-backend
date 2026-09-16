@@ -509,9 +509,17 @@ exports.getMyApplications = async (req, res) => {
   try {
     const seekerId = req.user.seeker_id;
 
-    const applications = await Application.find({
+    const { status } = req.query;
+
+    const filter = {
       seeker_id: seekerId,
-    }).sort({
+    };
+
+    if (status) {
+      filter.status = status;
+    }
+
+    const applications = await Application.find(filter).sort({
       applied_at: -1,
     });
 
@@ -529,7 +537,6 @@ exports.getMyApplications = async (req, res) => {
     });
   }
 };
-
 
 // ======================================================
 // GET ONE LOGGED-IN SEEKER APPLICATION
