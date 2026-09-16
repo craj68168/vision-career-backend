@@ -45,6 +45,8 @@ const adminAuthRoutes = require("./routes/admin/authRoutes");
 
 const adminDashboardRoutes = require("./routes/admin/dashboardRoutes");
 
+const adminApplicationRoutes = require("./routes/admin/applicationRoutes");
+
 // ======================================================
 // STARTUP MODELS
 // ======================================================
@@ -172,6 +174,12 @@ app.use("/api/seekers/vacancies", seekerVacancyRoutes);
 // ======================================================
 
 app.use("/api/seekers/dashboard", seekerDashboardRoutes);
+
+// ======================================================
+// ADMIN APPLICATIONS
+// ======================================================
+
+app.use("/api/admin/applications", adminApplicationRoutes);
 
 // ======================================================
 // NOT FOUND
