@@ -1,9 +1,6 @@
 const express = require("express");
-
 const cors = require("cors");
-
 const mongoose = require("mongoose");
-
 const path = require("path");
 
 require("dotenv").config();
@@ -41,10 +38,24 @@ const seekerVacancyRoutes = require("./routes/seekers/vacancyRoutes");
 const seekerDashboardRoutes = require("./routes/seekers/dashboardRoutes");
 
 // ======================================================
-// MODELS USED DURING STARTUP
+// ADMIN ROUTES
+// ======================================================
+
+const adminAuthRoutes = require("./routes/admin/authRoutes");
+
+const adminDashboardRoutes = require("./routes/admin/dashboardRoutes");
+
+// ======================================================
+// STARTUP MODELS
 // ======================================================
 
 const Vacancy = require("./models/providers/vacancySchema");
+
+// ======================================================
+// STARTUP UTILITIES
+// ======================================================
+
+const bootstrapAdmin = require("./utils/bootstrapAdmin");
 
 // ======================================================
 // APP
@@ -61,7 +72,6 @@ const PORT = process.env.PORT || 8000;
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
-
     credentials: true,
   }),
 );
@@ -78,28 +88,27 @@ app.use(
 // STATIC FILES
 // ======================================================
 
-app.use(
-  "/uploads",
-
-  express.static(path.join(__dirname, "uploads")),
-);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ======================================================
 // HEALTH CHECK
 // ======================================================
 
-app.get(
-  "/",
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
 
-  (req, res) => {
-    res.json({
-      success: true,
+    message: "Job portal API is running.",
+  });
+});
 
-      message: "Job portal API is running.",
-    });
-  },
-);
+// ======================================================
+// ADMIN AUTH
+// ======================================================
 
+app.use("/api/admin/auth", adminAuthRoutes);
+
+app.use("/api/admin/dashboard", adminDashboardRoutes);
 // ======================================================
 // SEEKER AUTH / RESUME
 // ======================================================
@@ -130,22 +139,6 @@ app.use("/api/providers/vacancies", vacancyRoutes);
 
 // ======================================================
 // PROVIDER APPLICATIONS
-// ======================================================
-//
-// NEW:
-//
-// GET
-// /api/providers/applications
-//
-// GET
-// /api/providers/applications/:applicationId
-//
-// GET
-// /api/providers/applications/:applicationId/resume
-//
-// PATCH
-// /api/providers/applications/:applicationId/status
-//
 // ======================================================
 
 app.use("/api/providers/applications", providerApplicationRoutes);
@@ -216,32 +209,23 @@ const startServer = async () => {
       throw new Error("MONGO_URI missing in .env");
     }
 
-    // ================================================
-    // CONNECT DATABASE
-    // ================================================
+    // ==================================================
+    // DATABASE
+    // ==================================================
 
     await mongoose.connect(process.env.MONGO_URI);
 
     console.log("✅ MongoDB connected");
 
-    // ================================================
-    // LEGACY VACANCY INDEX CLEANUP
-    // ================================================
-    //
-    // Previous schema:
-    //
-    // vacancy_id
-    //
-    // Current schema:
-    //
-    // vacancyId
-    //
-    // ================================================
+    // ==================================================
+    // CLEAN OLD VACANCY INDEX
+    // ==================================================
 
     const indexes = await Vacancy.collection.indexes();
 
     console.log(
       "Current vacancy indexes:",
+
       indexes.map((index) => index.name),
     );
 
@@ -255,17 +239,23 @@ const startServer = async () => {
       console.log("✅ Removed old vacancy_id_1 index");
     }
 
-    // ================================================
+    // ==================================================
     // CURRENT VACANCY INDEXES
-    // ================================================
+    // ==================================================
 
     await Vacancy.init();
 
     console.log("✅ Vacancy indexes ready");
 
-    // ================================================
+    // ==================================================
+    // CREATE INITIAL ADMIN IF NEEDED
+    // ==================================================
+
+    await bootstrapAdmin();
+
+    // ==================================================
     // START SERVER
-    // ================================================
+    // ==================================================
 
     app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
