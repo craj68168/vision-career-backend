@@ -51,6 +51,8 @@ const adminVacancyRoutes = require("./routes/admin/vacancyRoutes");
 
 const adminProviderRoutes = require("./routes/admin/providerRoutes");
 
+const adminSeekerRoutes = require("./routes/admin/seekerRoutes");
+
 // ======================================================
 // STARTUP MODELS
 // ======================================================
@@ -197,6 +199,8 @@ app.use("/api/admin/vacancies", adminVacancyRoutes);
 // ======================================================
 
 app.use("/api/admin/providers", adminProviderRoutes);
+
+app.use("/api/admin/seekers", adminSeekerRoutes);
 
 // ======================================================
 // NOT FOUND
