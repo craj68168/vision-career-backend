@@ -53,6 +53,8 @@ const adminProviderRoutes = require("./routes/admin/providerRoutes");
 
 const adminSeekerRoutes = require("./routes/admin/seekerRoutes");
 
+const adminPlacementRequestRoutes = require("./routes/admin/placementRequestRoutes");
+
 // ======================================================
 // STARTUP MODELS
 // ======================================================
@@ -200,7 +202,17 @@ app.use("/api/admin/vacancies", adminVacancyRoutes);
 
 app.use("/api/admin/providers", adminProviderRoutes);
 
+// ======================================================
+// ADMIN SEEKERS
+// ======================================================
+
 app.use("/api/admin/seekers", adminSeekerRoutes);
+
+// ======================================================
+// ADMIN PLACEMENT-REQUEST
+// ======================================================
+
+app.use("/api/admin/placement-requests", adminPlacementRequestRoutes);
 
 // ======================================================
 // NOT FOUND
@@ -317,6 +329,7 @@ const startServer = async () => {
     // ======================================================
 
     await Profile.init();
+    await bootstrapAdmin();
 
     console.log("✅ Profile indexes ready");
 

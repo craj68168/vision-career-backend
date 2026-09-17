@@ -31,36 +31,88 @@ exports.getAdminDashboard = async (req, res) => {
       hiredApplications,
       totalPlacementRequests,
     ] = await Promise.all([
+      // ==================================================
+      // JOB SEEKERS
+      // ==================================================
+
       Seeker.countDocuments(),
-      Provider.countDocuments(),
+
+      // ==================================================
+      // JOB PROVIDERS
+      // ==================================================
+
+      Provider.countDocuments({
+        role: "provider",
+      }),
+
+      // ==================================================
+      // VACANCIES
+      // ==================================================
+
       Vacancy.countDocuments(),
+
       Vacancy.countDocuments({
         status: "published",
         isPublished: true,
       }),
+
       Vacancy.countDocuments({
         status: "pending_review",
       }),
+
+      // ==================================================
+      // APPLICATIONS
+      // ==================================================
+
       Application.countDocuments(),
+
       Application.countDocuments({
         status: "PENDING_ADMIN_APPROVAL",
       }),
+
       Application.countDocuments({
         status: "SENT_TO_PROVIDER",
       }),
+
       Application.countDocuments({
         status: "UNDER_REVIEW",
       }),
+
       Application.countDocuments({
         status: "INTERVIEW",
       }),
+
       Application.countDocuments({
         status: "SELECTED",
       }),
+
       Application.countDocuments({
         status: "HIRED",
       }),
-      Recruit.countDocuments(),
+
+      // ==================================================
+      // PLACEMENT REQUESTS
+      //
+      // IMPORTANT:
+      //
+      // Draft requests belong only to Provider.
+      // Admin should only count requests after Provider
+      // submits them for review.
+      //
+      // Included:
+      // pending_review
+      // approved
+      // rejected
+      //
+      // Excluded:
+      // draft
+      // ==================================================
+
+      Recruit.countDocuments({
+        status: {
+          $ne: "draft",
+        },
+      }),
     ]);
 
     // ==================================================
@@ -186,13 +238,25 @@ exports.getAdminDashboard = async (req, res) => {
 
       data: {
         summary: {
+          // ==============================================
+          // JOB SEEKERS
+          // ==============================================
+
           jobSeekers: {
             total: totalJobSeekers,
           },
 
+          // ==============================================
+          // PROVIDERS
+          // ==============================================
+
           providers: {
             total: totalProviders,
           },
+
+          // ==============================================
+          // VACANCIES
+          // ==============================================
 
           vacancies: {
             total: totalVacancies,
@@ -201,6 +265,10 @@ exports.getAdminDashboard = async (req, res) => {
 
             pendingReview: pendingVacancies,
           },
+
+          // ==============================================
+          // APPLICATIONS
+          // ==============================================
 
           applications: {
             total: totalApplications,
@@ -218,10 +286,20 @@ exports.getAdminDashboard = async (req, res) => {
             hired: hiredApplications,
           },
 
+          // ==============================================
+          // PLACEMENT REQUESTS
+          //
+          // Does NOT include Provider drafts.
+          // ==============================================
+
           placementRequests: {
             total: totalPlacementRequests,
           },
         },
+
+        // ================================================
+        // RECENT DATA
+        // ================================================
 
         recent: {
           pendingApplications: recentPendingApplications,
