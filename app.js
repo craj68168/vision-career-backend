@@ -55,6 +55,8 @@ const adminSeekerRoutes = require("./routes/admin/seekerRoutes");
 
 const adminPlacementRequestRoutes = require("./routes/admin/placementRequestRoutes");
 
+const adminPlacementBillingRoutes = require("./routes/admin/placementBillingRoutes");
+
 // ======================================================
 // PLACEMENT CANDIDATE ROUTES
 // ======================================================
@@ -229,6 +231,7 @@ app.use(
   providerPlacementCandidateRoutes,
 );
 
+app.use("/api/admin/placement-billings", adminPlacementBillingRoutes);
 // ======================================================
 // NOT FOUND
 // ======================================================

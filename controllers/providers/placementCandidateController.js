@@ -1,5 +1,7 @@
 const PlacementCandidate = require("../../models/placements/placementCandidateSchema");
-
+const {
+  ensurePlacementBilling,
+} = require("../../utils/ensurePlacementBilling");
 const Recruit = require("../../models/providers/recruitSchema");
 
 const {
@@ -291,6 +293,22 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
     candidate.status = status;
 
     await candidate.save();
+
+    // ======================================================
+    // CREATE BILLING WHEN CANDIDATE BECOMES PLACED
+    // ======================================================
+
+    if (status === "PLACED") {
+      try {
+        await ensurePlacementBilling(candidate);
+      } catch (billingError) {
+        console.error("AUTO PLACEMENT BILLING ERROR:", billingError);
+
+        // Do not undo the successful placement.
+        // Admin billing GET will automatically backfill
+        // missing billing records.
+      }
+    }
 
     // ==================================================
     // SYNCHRONIZE SEEKER
