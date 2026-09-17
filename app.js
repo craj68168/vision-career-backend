@@ -56,6 +56,14 @@ const adminSeekerRoutes = require("./routes/admin/seekerRoutes");
 const adminPlacementRequestRoutes = require("./routes/admin/placementRequestRoutes");
 
 // ======================================================
+// PLACEMENT CANDIDATE ROUTES
+// ======================================================
+
+const adminPlacementCandidateRoutes = require("./routes/admin/placementCandidateRoutes");
+
+const providerPlacementCandidateRoutes = require("./routes/providers/placementCandidateRoutes");
+
+// ======================================================
 // STARTUP MODELS
 // ======================================================
 
@@ -213,6 +221,13 @@ app.use("/api/admin/seekers", adminSeekerRoutes);
 // ======================================================
 
 app.use("/api/admin/placement-requests", adminPlacementRequestRoutes);
+
+app.use("/api/admin/placement-candidates", adminPlacementCandidateRoutes);
+
+app.use(
+  "/api/providers/placement-candidates",
+  providerPlacementCandidateRoutes,
+);
 
 // ======================================================
 // NOT FOUND
