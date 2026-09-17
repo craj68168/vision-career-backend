@@ -14,7 +14,7 @@ const auditSchema = new mongoose.Schema(
         "ISSUED",
         "MARKED_PAID",
         "CANCELLED",
-        "REFUNDED",
+        "REFUND_PROCESSED",
       ],
       required: true,
     },
@@ -52,6 +52,51 @@ const auditSchema = new mongoose.Schema(
 );
 
 // ======================================================
+// REFUND HISTORY
+// ======================================================
+
+const refundSchema = new mongoose.Schema(
+  {
+    refundId: {
+      type: String,
+      required: true,
+    },
+
+    amount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    reason: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 1000,
+    },
+
+    actor_type: {
+      type: String,
+      enum: ["admin", "staff"],
+      required: true,
+    },
+
+    actor_id: {
+      type: String,
+      required: true,
+    },
+
+    refunded_at: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: true,
+  },
+);
+
+// ======================================================
 // PLACEMENT BILLING
 // ======================================================
 
@@ -65,7 +110,6 @@ const placementBillingSchema = new mongoose.Schema(
       immutable: true,
     },
 
-    // One billing for one successful placement.
     placementCandidateId: {
       type: String,
       required: true,
@@ -86,7 +130,6 @@ const placementBillingSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Internal only.
     seekerId: {
       type: String,
       required: true,
@@ -94,7 +137,7 @@ const placementBillingSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // SNAPSHOT INFORMATION
+    // SNAPSHOT
     // ==================================================
 
     companyName: {
@@ -121,7 +164,7 @@ const placementBillingSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // FINANCIAL
+    // BILLING
     // ==================================================
 
     currency: {
@@ -160,12 +203,41 @@ const placementBillingSchema = new mongoose.Schema(
     },
 
     // ==================================================
+    // PAYMENT
+    // ==================================================
+
+    paidAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    refundedAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    netPaidAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // ==================================================
     // STATUS
     // ==================================================
 
     status: {
       type: String,
-      enum: ["draft", "issued", "paid", "cancelled", "refunded"],
+      enum: [
+        "draft",
+        "issued",
+        "paid",
+        "partially_refunded",
+        "refunded",
+        "cancelled",
+      ],
       default: "draft",
       index: true,
     },
@@ -185,7 +257,7 @@ const placementBillingSchema = new mongoose.Schema(
       default: null,
     },
 
-    refundedAt: {
+    fullyRefundedAt: {
       type: Date,
       default: null,
     },
@@ -204,6 +276,11 @@ const placementBillingSchema = new mongoose.Schema(
       maxlength: 2000,
     },
 
+    refundHistory: {
+      type: [refundSchema],
+      default: [],
+    },
+
     auditHistory: {
       type: [auditSchema],
       default: [],
@@ -215,7 +292,7 @@ const placementBillingSchema = new mongoose.Schema(
 );
 
 // ======================================================
-// RECALCULATE FINANCIAL TOTALS
+// RECALCULATE
 // ======================================================
 
 placementBillingSchema.pre("validate", function () {
@@ -228,6 +305,11 @@ placementBillingSchema.pre("validate", function () {
 
   this.taxAmount = tax;
   this.totalAmount = total;
+
+  const paid = Number(this.paidAmount || 0);
+  const refunded = Number(this.refundedAmount || 0);
+
+  this.netPaidAmount = Math.max(Math.round((paid - refunded) * 100) / 100, 0);
 });
 
 module.exports = mongoose.model("PlacementBilling", placementBillingSchema);

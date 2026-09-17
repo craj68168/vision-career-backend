@@ -9,6 +9,7 @@ const {
   issuePlacementBilling,
   markPlacementBillingPaid,
   cancelPlacementBilling,
+  refundPlacementBilling,
 } = require("../../controllers/admin/placementBillingController");
 
 const router = express.Router();
@@ -24,5 +25,7 @@ router.patch("/:billingId/issue", adminAuth, issuePlacementBilling);
 router.patch("/:billingId/paid", adminAuth, markPlacementBillingPaid);
 
 router.patch("/:billingId/cancel", adminAuth, cancelPlacementBilling);
+
+router.patch("/:billingId/refund", adminAuth, refundPlacementBilling);
 
 module.exports = router;
