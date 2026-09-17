@@ -2,12 +2,14 @@ const PlacementCandidate = require("../../models/placements/placementCandidateSc
 
 const Recruit = require("../../models/providers/recruitSchema");
 
+const {
+  syncSeekerPlacementStatus,
+} = require("../../utils/syncSeekerPlacementStatus");
+
 // ======================================================
 // SAFE PROVIDER SERIALIZER
 //
-// IMPORTANT:
-//
-// Do NOT expose:
+// NEVER EXPOSE:
 //
 // seekerId
 // providerId
@@ -47,7 +49,7 @@ const serializeProviderCandidate = (candidate) => ({
 });
 
 // ======================================================
-// ALLOWED PROVIDER TRANSITIONS
+// ALLOWED TRANSITIONS
 // ======================================================
 
 const ALLOWED_TRANSITIONS = {
@@ -109,9 +111,6 @@ exports.getPlacementCandidates = async (req, res) => {
 
 // ======================================================
 // GET ONE
-//
-// GET
-// /api/providers/placement-candidates/:placementCandidateId
 // ======================================================
 
 exports.getPlacementCandidateById = async (req, res) => {
@@ -136,6 +135,8 @@ exports.getPlacementCandidateById = async (req, res) => {
       data: serializeProviderCandidate(candidate),
     });
   } catch (error) {
+    console.error("GET PROVIDER PLACEMENT CANDIDATE ERROR:", error);
+
     return res.status(500).json({
       success: false,
 
@@ -155,6 +156,10 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
   try {
     const { status, rejectionReason } = req.body;
 
+    // ==================================================
+    // ALLOWED STATUS VALUES
+    // ==================================================
+
     const allowedStatuses = [
       "UNDER_REVIEW",
       "INTERVIEW",
@@ -171,6 +176,10 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // FIND CANDIDATE OWNED BY PROVIDER
+    // ==================================================
+
     const candidate = await PlacementCandidate.findOne({
       placementCandidateId: req.params.placementCandidateId,
 
@@ -185,8 +194,14 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       });
     }
 
+    // Keep seeker ID internally.
+    //
+    // It is never returned by provider serializer.
+
+    const seekerId = candidate.seekerId;
+
     // ==================================================
-    // CONFIRM REQUEST STILL BELONGS TO PROVIDER
+    // CONFIRM PLACEMENT REQUEST OWNERSHIP
     // ==================================================
 
     const recruit = await Recruit.findOne({
@@ -204,7 +219,7 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
     }
 
     // ==================================================
-    // TRANSITION
+    // VALID TRANSITION
     // ==================================================
 
     const nextStatuses = ALLOWED_TRANSITIONS[candidate.status] || [];
@@ -218,11 +233,13 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
     }
 
     // ==================================================
-    // REJECTION REASON
+    // REJECTION
     // ==================================================
 
     if (status === "REJECTED") {
-      if (!rejectionReason || !String(rejectionReason).trim()) {
+      const normalizedReason = String(rejectionReason || "").trim();
+
+      if (!normalizedReason) {
         return res.status(400).json({
           success: false,
 
@@ -230,11 +247,21 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
         });
       }
 
-      candidate.rejectionReason = String(rejectionReason).trim();
+      if (normalizedReason.length > 1000) {
+        return res.status(400).json({
+          success: false,
+
+          message: "Rejection reason cannot exceed 1000 characters.",
+        });
+      }
+
+      candidate.rejectionReason = normalizedReason;
 
       candidate.rejectedAt = new Date();
     } else {
       candidate.rejectionReason = null;
+
+      candidate.rejectedAt = null;
     }
 
     // ==================================================
@@ -257,9 +284,30 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       candidate.placedAt = new Date();
     }
 
+    // ==================================================
+    // UPDATE CANDIDATE
+    // ==================================================
+
     candidate.status = status;
 
     await candidate.save();
+
+    // ==================================================
+    // SYNCHRONIZE SEEKER
+    //
+    // IMPORTANT:
+    //
+    // The helper looks at ALL placement records.
+    //
+    // Example:
+    //
+    // Request A = PLACED
+    // Request B = REJECTED
+    //
+    // seeker remains "placed".
+    // ==================================================
+
+    const seekerPlacement = await syncSeekerPlacementStatus(seekerId);
 
     return res.status(200).json({
       success: true,
@@ -267,6 +315,8 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       message: "Candidate status updated.",
 
       data: serializeProviderCandidate(candidate),
+
+      seekerPlacementStatus: seekerPlacement?.placementStatus || null,
     });
   } catch (error) {
     console.error("UPDATE PROVIDER CANDIDATE STATUS ERROR:", error);

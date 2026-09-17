@@ -6,6 +6,10 @@ const Recruit = require("../../models/providers/recruitSchema");
 
 const Seeker = require("../../models/seekers/seekerSchema");
 
+const {
+  syncSeekerPlacementStatus,
+} = require("../../utils/syncSeekerPlacementStatus");
+
 // ======================================================
 // GENERATE PLACEMENT CANDIDATE ID
 // ======================================================
@@ -27,7 +31,7 @@ const generatePlacementCandidateId = async () => {
 };
 
 // ======================================================
-// BUILD SAFE SNAPSHOT
+// SAFE CANDIDATE SNAPSHOT
 // ======================================================
 
 const buildCandidateSnapshot = (seeker) => ({
@@ -115,7 +119,7 @@ const serializeCandidate = (candidate) => ({
 });
 
 // ======================================================
-// VERIFY APPROVED PLACEMENT REQUEST
+// GET APPROVED PLACEMENT REQUEST
 // ======================================================
 
 const getApprovedRecruit = async (recruitId) => {
@@ -147,10 +151,21 @@ exports.getEligibleSeekers = async (req, res) => {
       });
     }
 
-    // Already matched to this request
+    // ==================================================
+    // ALREADY MATCHED TO THIS REQUEST
+    // ==================================================
+
     const matchedSeekerIds = await PlacementCandidate.distinct("seekerId", {
       recruitId,
     });
+
+    // ==================================================
+    // ELIGIBLE SEEKERS
+    //
+    // A seeker may participate in other placement
+    // processes, but once placement_status = placed,
+    // they must no longer be offered for new requests.
+    // ==================================================
 
     const seekers = await Seeker.find({
       approval_status: "approved",
@@ -249,7 +264,7 @@ exports.getEligibleSeekers = async (req, res) => {
 };
 
 // ======================================================
-// GET MATCHED CANDIDATES FOR REQUEST
+// GET MATCHED CANDIDATES
 //
 // GET
 // /api/admin/placement-candidates/:recruitId
@@ -341,6 +356,10 @@ exports.matchCandidate = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // ALREADY PLACED
+    // ==================================================
+
     if (seeker.placement_status === "placed") {
       return res.status(409).json({
         success: false,
@@ -350,11 +369,12 @@ exports.matchCandidate = async (req, res) => {
     }
 
     // ==================================================
-    // DUPLICATE
+    // DUPLICATE FOR SAME REQUEST
     // ==================================================
 
     const existing = await PlacementCandidate.findOne({
       recruitId,
+
       seekerId,
     });
 
@@ -368,10 +388,14 @@ exports.matchCandidate = async (req, res) => {
     }
 
     // ==================================================
-    // CREATE
+    // GENERATE ID
     // ==================================================
 
     const placementCandidateId = await generatePlacementCandidateId();
+
+    // ==================================================
+    // CREATE MATCH
+    // ==================================================
 
     const candidate = await PlacementCandidate.create({
       placementCandidateId,
@@ -390,6 +414,19 @@ exports.matchCandidate = async (req, res) => {
 
       matchedAt: new Date(),
     });
+
+    // ==================================================
+    // SYNC SEEKER STATUS
+    //
+    // Usually:
+    //
+    // unplaced -> matching
+    //
+    // But shared sync logic prevents accidentally
+    // downgrading a higher status from another request.
+    // ==================================================
+
+    await syncSeekerPlacementStatus(seeker.seeker_id);
 
     return res.status(201).json({
       success: true,
