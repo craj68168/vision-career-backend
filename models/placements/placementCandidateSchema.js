@@ -71,6 +71,7 @@ const employmentSnapshotSchema = new mongoose.Schema(
 // SAFE CANDIDATE SNAPSHOT
 //
 // IMPORTANT:
+//
 // Do NOT store:
 //
 // email
@@ -152,6 +153,10 @@ const candidateSnapshotSchema = new mongoose.Schema(
 
 const placementCandidateSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // IDENTIFIERS
+    // ==================================================
+
     placementCandidateId: {
       type: String,
       required: true,
@@ -166,7 +171,7 @@ const placementCandidateSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Provider registerId, e.g. r-000010
+    // Provider registerId
     providerId: {
       type: String,
       required: true,
@@ -174,7 +179,8 @@ const placementCandidateSchema = new mongoose.Schema(
     },
 
     // Internal only.
-    // Provider serializer must NOT expose this.
+    //
+    // Provider serializer MUST NOT expose this.
     seekerId: {
       type: String,
       required: true,
@@ -186,10 +192,20 @@ const placementCandidateSchema = new mongoose.Schema(
       required: true,
     },
 
+    // ==================================================
+    // SAFE SNAPSHOT
+    // ==================================================
+
     candidate_snapshot: {
       type: candidateSnapshotSchema,
       required: true,
     },
+
+    // ==================================================
+    // PROVIDER PIPELINE STATUS
+    //
+    // Staff review must NEVER modify this.
+    // ==================================================
 
     status: {
       type: String,
@@ -207,6 +223,10 @@ const placementCandidateSchema = new mongoose.Schema(
 
       index: true,
     },
+
+    // ==================================================
+    // PIPELINE TIMESTAMPS
+    // ==================================================
 
     matchedAt: {
       type: Date,
@@ -244,6 +264,47 @@ const placementCandidateSchema = new mongoose.Schema(
       trim: true,
       maxlength: 1000,
     },
+
+    // ==================================================
+    // STAFF OPERATIONAL REVIEW
+    //
+    // Independent from Provider pipeline status.
+    //
+    // Staff can:
+    // REVIEWED
+    // NEEDS_ATTENTION
+    //
+    // Staff cannot:
+    // INTERVIEW / SELECTED / PLACED / REJECTED
+    // ==================================================
+
+    staff_review_status: {
+      type: String,
+
+      enum: ["NOT_REVIEWED", "REVIEWED", "NEEDS_ATTENTION"],
+
+      default: "NOT_REVIEWED",
+
+      index: true,
+    },
+
+    staff_review_note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    reviewed_by_staff_id: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    staff_reviewed_at: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -266,5 +327,9 @@ placementCandidateSchema.index(
     unique: true,
   },
 );
+
+// ======================================================
+// MODEL
+// ======================================================
 
 module.exports = mongoose.model("PlacementCandidate", placementCandidateSchema);

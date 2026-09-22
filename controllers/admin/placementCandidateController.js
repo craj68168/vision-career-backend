@@ -81,6 +81,26 @@ const buildCandidateSnapshot = (seeker) => ({
 });
 
 // ======================================================
+// STAFF REVIEW SERIALIZER
+// ======================================================
+//
+// Existing candidate records may not physically contain
+// these fields yet.
+//
+// Treat missing values as NOT_REVIEWED.
+// ======================================================
+
+const serializeStaffReview = (candidate) => ({
+  status: candidate.staff_review_status || "NOT_REVIEWED",
+
+  note: candidate.staff_review_note || null,
+
+  reviewedByStaffId: candidate.reviewed_by_staff_id || null,
+
+  reviewedAt: candidate.staff_reviewed_at || null,
+});
+
+// ======================================================
 // ADMIN SERIALIZER
 // ======================================================
 
@@ -92,6 +112,10 @@ const serializeCandidate = (candidate) => ({
   providerId: candidate.providerId,
 
   seekerId: candidate.seekerId,
+
+  // ==================================================
+  // PROVIDER PIPELINE
+  // ==================================================
 
   status: candidate.status,
 
@@ -112,6 +136,16 @@ const serializeCandidate = (candidate) => ({
   rejectedAt: candidate.rejectedAt,
 
   rejectionReason: candidate.rejectionReason,
+
+  // ==================================================
+  // STAFF OPERATIONAL REVIEW
+  // ==================================================
+
+  staffReview: serializeStaffReview(candidate),
+
+  // ==================================================
+  // TIMESTAMPS
+  // ==================================================
 
   createdAt: candidate.createdAt,
 
@@ -161,10 +195,6 @@ exports.getEligibleSeekers = async (req, res) => {
 
     // ==================================================
     // ELIGIBLE SEEKERS
-    //
-    // A seeker may participate in other placement
-    // processes, but once placement_status = placed,
-    // they must no longer be offered for new requests.
     // ==================================================
 
     const seekers = await Seeker.find({
@@ -413,17 +443,24 @@ exports.matchCandidate = async (req, res) => {
       status: "MATCHED",
 
       matchedAt: new Date(),
+
+      // Explicit initial Staff review values.
+      //
+      // The schema already defaults these, but
+      // keeping them here makes the new workflow
+      // clear when inspecting MongoDB.
+
+      staff_review_status: "NOT_REVIEWED",
+
+      staff_review_note: null,
+
+      reviewed_by_staff_id: null,
+
+      staff_reviewed_at: null,
     });
 
     // ==================================================
     // SYNC SEEKER STATUS
-    //
-    // Usually:
-    //
-    // unplaced -> matching
-    //
-    // But shared sync logic prevents accidentally
-    // downgrading a higher status from another request.
     // ==================================================
 
     await syncSeekerPlacementStatus(seeker.seeker_id);
