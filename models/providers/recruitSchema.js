@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const recruitSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // IDENTIFIER
+    // ==================================================
+
     recruitId: {
       type: String,
       unique: true,
@@ -9,12 +13,20 @@ const recruitSchema = new mongoose.Schema(
       required: true,
     },
 
+    // ==================================================
+    // PROVIDER
+    // ==================================================
+
     // Provider registerId
     company_id: {
       type: String,
       required: true,
       index: true,
     },
+
+    // ==================================================
+    // JOB INFORMATION
+    // ==================================================
 
     job_title: {
       type: String,
@@ -70,6 +82,10 @@ const recruitSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ==================================================
+    // SALARY / CONDITIONS
+    // ==================================================
+
     salary_type: {
       type: String,
       default: "",
@@ -100,6 +116,10 @@ const recruitSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ==================================================
+    // WORKFLOW STATUS
+    // ==================================================
+
     status: {
       type: String,
       enum: ["draft", "pending_review", "approved", "rejected"],
@@ -122,6 +142,40 @@ const recruitSchema = new mongoose.Schema(
       default: null,
       trim: true,
       maxlength: 1000,
+    },
+
+    // ==================================================
+    // STAFF SCREENING
+    //
+    // Staff screening does NOT modify status.
+    //
+    // Admin remains responsible for final
+    // approval / rejection.
+    // ==================================================
+
+    staff_screening_status: {
+      type: String,
+      enum: ["NOT_SCREENED", "SCREENED", "NEEDS_ATTENTION"],
+      default: "NOT_SCREENED",
+      index: true,
+    },
+
+    staff_screening_note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    screened_by_staff_id: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    screened_at: {
+      type: Date,
+      default: null,
     },
   },
   {

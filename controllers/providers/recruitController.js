@@ -241,6 +241,21 @@ exports.submitRecruit = async (req, res) => {
 
     recruit.reviewed_at = null;
     recruit.rejection_reason = null;
+    // ======================================================
+    // RESET STAFF SCREENING ON NEW SUBMISSION
+    //
+    // A rejected request may have been edited by the
+    // Provider, so previous Staff screening must not be
+    // treated as the review of the new submission.
+    // ======================================================
+
+    recruit.staff_screening_status = "NOT_SCREENED";
+
+    recruit.staff_screening_note = null;
+
+    recruit.screened_by_staff_id = null;
+
+    recruit.screened_at = null;
 
     await recruit.save();
 
