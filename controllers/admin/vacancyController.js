@@ -15,6 +15,22 @@ const VACANCY_STATUSES = [
 ];
 
 // ======================================================
+// STAFF SCREENING SERIALIZER
+// ======================================================
+
+const serializeStaffScreening = (vacancy) => {
+  return {
+    status: vacancy.staff_screening_status || "NOT_SCREENED",
+
+    note: vacancy.staff_screening_note || null,
+
+    screenedByStaffId: vacancy.screened_by_staff_id || null,
+
+    screenedAt: vacancy.screened_at || null,
+  };
+};
+
+// ======================================================
 // PROVIDER MAP
 // ======================================================
 
@@ -81,6 +97,16 @@ const toVacancyListItem = (vacancy, provider) => {
     createdAt: vacancy.createdAt,
 
     updatedAt: vacancy.updatedAt,
+
+    // ==================================================
+    // STAFF SCREENING
+    // ==================================================
+
+    staffScreening: serializeStaffScreening(vacancy),
+
+    // ==================================================
+    // PROVIDER
+    // ==================================================
 
     provider: {
       registerId: provider?.registerId || vacancy.registerId,
@@ -208,7 +234,13 @@ const toVacancyDetails = (vacancy, provider) => {
     contactEmail: vacancy.contactEmail,
 
     // ==================================================
-    // REVIEW
+    // STAFF SCREENING
+    // ==================================================
+
+    staffScreening: serializeStaffScreening(vacancy),
+
+    // ==================================================
+    // ADMIN REVIEW
     // ==================================================
 
     status: vacancy.status,
@@ -305,6 +337,7 @@ exports.getAdminVacancies = async (req, res) => {
         {
           vacancyId: {
             $regex: search,
+
             $options: "i",
           },
         },
@@ -312,6 +345,7 @@ exports.getAdminVacancies = async (req, res) => {
         {
           title: {
             $regex: search,
+
             $options: "i",
           },
         },
@@ -319,6 +353,7 @@ exports.getAdminVacancies = async (req, res) => {
         {
           titleKana: {
             $regex: search,
+
             $options: "i",
           },
         },
@@ -326,6 +361,7 @@ exports.getAdminVacancies = async (req, res) => {
         {
           companyName: {
             $regex: search,
+
             $options: "i",
           },
         },
@@ -333,6 +369,7 @@ exports.getAdminVacancies = async (req, res) => {
         {
           employmentType: {
             $regex: search,
+
             $options: "i",
           },
         },
@@ -340,6 +377,7 @@ exports.getAdminVacancies = async (req, res) => {
         {
           workLocation: {
             $regex: search,
+
             $options: "i",
           },
         },
@@ -431,6 +469,9 @@ exports.getAdminVacancyById = async (req, res) => {
 //
 // pending_review -> approved
 //
+// Staff screening is advisory.
+// Admin remains final decision maker.
+//
 // PATCH /api/admin/vacancies/:vacancyId/approve
 // ======================================================
 
@@ -481,6 +522,8 @@ exports.approveAdminVacancy = async (req, res) => {
         isPublished: vacancy.isPublished,
 
         reviewedAt: vacancy.reviewedAt,
+
+        rejectionReason: null,
       },
     });
   } catch (error) {

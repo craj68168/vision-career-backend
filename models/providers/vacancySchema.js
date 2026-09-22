@@ -1,9 +1,13 @@
 const mongoose = require("mongoose");
 
+// ======================================================
+// VACANCY SCHEMA
+// ======================================================
+
 const vacancySchema = new mongoose.Schema(
   {
     // ==================================================
-    // IDS / OWNERSHIP
+    // IDENTIFIERS
     // ==================================================
 
     vacancyId: {
@@ -20,7 +24,7 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // COMPANY INFORMATION
+    // COMPANY
     // ==================================================
 
     companyName: {
@@ -36,7 +40,7 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // POSITION DETAILS
+    // JOB INFORMATION
     // ==================================================
 
     title: {
@@ -59,13 +63,9 @@ const vacancySchema = new mongoose.Schema(
 
     numberOfPeople: {
       type: Number,
-      min: 1,
       default: 1,
+      min: 1,
     },
-
-    // ==================================================
-    // JOB DESCRIPTION
-    // ==================================================
 
     jobDescription: {
       type: String,
@@ -78,10 +78,6 @@ const vacancySchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
-
-    // ==================================================
-    // REQUIREMENTS
-    // ==================================================
 
     requiredSkills: {
       type: String,
@@ -114,7 +110,7 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // LOCATION / SALARY
+    // WORK LOCATION
     // ==================================================
 
     workLocation: {
@@ -135,14 +131,20 @@ const vacancySchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ==================================================
+    // SALARY
+    // ==================================================
+
     salaryMin: {
       type: Number,
       default: null,
+      min: 0,
     },
 
     salaryMax: {
       type: Number,
       default: null,
+      min: 0,
     },
 
     salaryNote: {
@@ -152,7 +154,7 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // SCHEDULE
+    // WORK CONDITIONS
     // ==================================================
 
     workHours: {
@@ -179,10 +181,6 @@ const vacancySchema = new mongoose.Schema(
       trim: true,
     },
 
-    // ==================================================
-    // BENEFITS
-    // ==================================================
-
     benefits: {
       type: [String],
       default: [],
@@ -200,7 +198,7 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // APPLICATION
+    // DATES / SELECTION
     // ==================================================
 
     applicationDeadline: {
@@ -221,10 +219,7 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // CONTACT PERSON
-    //
-    // PRIVATE:
-    // NEVER expose this in public seeker API.
+    // PRIVATE PROVIDER CONTACT
     // ==================================================
 
     contactPerson: {
@@ -247,12 +242,11 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // REVIEW
+    // VACANCY WORKFLOW
     // ==================================================
 
     status: {
       type: String,
-
       enum: [
         "draft",
         "pending_review",
@@ -261,13 +255,14 @@ const vacancySchema = new mongoose.Schema(
         "published",
         "closed",
       ],
-
       default: "pending_review",
+      index: true,
     },
 
     isPublished: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     reviewedAt: {
@@ -278,11 +273,62 @@ const vacancySchema = new mongoose.Schema(
     rejectionReason: {
       type: String,
       default: null,
+      trim: true,
+      maxlength: 1000,
+    },
+
+    // ==================================================
+    // STAFF SCREENING
+    //
+    // IMPORTANT:
+    //
+    // Staff screening does NOT change vacancy.status.
+    //
+    // Staff only prepares information for Admin.
+    // ==================================================
+
+    staff_screening_status: {
+      type: String,
+      enum: ["NOT_SCREENED", "SCREENED", "NEEDS_ATTENTION"],
+      default: "NOT_SCREENED",
+      index: true,
+    },
+
+    staff_screening_note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    screened_by_staff_id: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    screened_at: {
+      type: Date,
+      default: null,
     },
   },
   {
     timestamps: true,
   },
 );
+
+// ======================================================
+// INDEXES
+// ======================================================
+
+vacancySchema.index({
+  registerId: 1,
+  createdAt: -1,
+});
+
+vacancySchema.index({
+  status: 1,
+  isPublished: 1,
+});
 
 module.exports = mongoose.model("Vacancy", vacancySchema);
