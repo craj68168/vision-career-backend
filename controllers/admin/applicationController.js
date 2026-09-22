@@ -25,6 +25,32 @@ const APPLICATION_STATUSES = [
 ];
 
 // ======================================================
+// STAFF SCREENING SERIALIZER
+// ======================================================
+
+const serializeStaffScreening = (application) => ({
+  status: application.staff_screening_status || "NOT_SCREENED",
+
+  note: application.staff_screening_note || null,
+
+  screenedByStaffId: application.screened_by_staff_id || null,
+
+  screenedAt: application.screened_at || null,
+});
+
+// ======================================================
+// ADMIN REVIEW SERIALIZER
+// ======================================================
+
+const serializeAdminReview = (application) => ({
+  reviewedAt: application.admin_reviewed_at || null,
+
+  reviewedBy: application.admin_reviewed_by || null,
+
+  rejectionReason: application.admin_rejection_reason || null,
+});
+
+// ======================================================
 // FIND RELATED DATA
 // ======================================================
 
@@ -106,7 +132,11 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
 
     appliedAt: application.applied_at,
 
-    coverLetter: application.cover_letter,
+    coverLetter: application.cover_letter || null,
+
+    // ==================================================
+    // CANDIDATE
+    // ==================================================
 
     candidate: {
       name: seeker?.name || application.profile_snapshot?.name || "Unknown",
@@ -131,7 +161,13 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
         null,
     },
 
+    // ==================================================
+    // VACANCY
+    // ==================================================
+
     vacancy: {
+      vacancyId: vacancy?.vacancyId || application.vacancy_id,
+
       title: vacancy?.title || "Unknown Vacancy",
 
       companyName:
@@ -146,7 +182,13 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
       salaryMax: vacancy?.salaryMax ?? null,
     },
 
+    // ==================================================
+    // PROVIDER
+    // ==================================================
+
     provider: {
+      registerId: provider?.registerId || application.provider_id,
+
       name: provider?.name || null,
 
       companyName: provider?.companyName || vacancy?.companyName || null,
@@ -154,13 +196,17 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
       email: provider?.email || null,
     },
 
-    adminReview: {
-      reviewedAt: application.admin_reviewed_at,
+    // ==================================================
+    // STAFF SCREENING
+    // ==================================================
 
-      reviewedBy: application.admin_reviewed_by,
+    staffScreening: serializeStaffScreening(application),
 
-      rejectionReason: application.admin_rejection_reason,
-    },
+    // ==================================================
+    // ADMIN REVIEW
+    // ==================================================
+
+    adminReview: serializeAdminReview(application),
   };
 };
 
@@ -173,6 +219,7 @@ const getApplicationSummary = async () => {
     {
       $group: {
         _id: "$status",
+
         count: {
           $sum: 1,
         },
@@ -247,9 +294,9 @@ exports.getAdminApplications = async (req, res) => {
       ),
     );
 
-    // ================================================
+    // ==================================================
     // SEARCH
-    // ================================================
+    // ==================================================
 
     if (search) {
       data = data.filter((application) => {
@@ -271,6 +318,12 @@ exports.getAdminApplications = async (req, res) => {
           application.provider.companyName,
 
           application.status,
+
+          application.staffScreening.status,
+
+          application.staffScreening.screenedByStaffId,
+
+          application.staffScreening.note,
         ]
           .filter(Boolean)
           .join(" ")
@@ -352,12 +405,16 @@ exports.getAdminApplicationById = async (req, res) => {
 
         status: application.status,
 
-        coverLetter: application.cover_letter,
+        coverLetter: application.cover_letter || null,
 
         appliedAt: application.applied_at,
 
+        // ============================================
+        // CANDIDATE
+        // ============================================
+
         candidate: {
-          name: seeker?.name || application.profile_snapshot?.name || null,
+          name: seeker?.name || application.profile_snapshot?.name || "Unknown",
 
           email: seeker?.email || null,
 
@@ -412,61 +469,74 @@ exports.getAdminApplicationById = async (req, res) => {
             [],
         },
 
-        vacancy: vacancy
-          ? {
-              vacancyId: vacancy.vacancyId,
+        // ============================================
+        // VACANCY
+        // ============================================
 
-              title: vacancy.title,
+        vacancy: {
+          vacancyId: vacancy?.vacancyId || application.vacancy_id,
 
-              companyName: vacancy.companyName,
+          title: vacancy?.title || "Unknown Vacancy",
 
-              employmentType: vacancy.employmentType,
+          companyName:
+            vacancy?.companyName || provider?.companyName || "Unknown Company",
 
-              numberOfPeople: vacancy.numberOfPeople,
+          employmentType: vacancy?.employmentType || null,
 
-              jobDescription: vacancy.jobDescription,
+          numberOfPeople: vacancy?.numberOfPeople || 0,
 
-              responsibilities: vacancy.responsibilities,
+          jobDescription: vacancy?.jobDescription || null,
 
-              requiredSkills: vacancy.requiredSkills,
+          responsibilities: vacancy?.responsibilities || null,
 
-              requiredEducation: vacancy.requiredEducation,
+          requiredSkills: vacancy?.requiredSkills || null,
 
-              requiredExperience: vacancy.requiredExperience,
+          requiredEducation: vacancy?.requiredEducation || null,
 
-              japaneseLevel: vacancy.japaneseLevel,
+          requiredExperience: vacancy?.requiredExperience || null,
 
-              workLocation: vacancy.workLocation,
+          japaneseLevel: vacancy?.japaneseLevel || null,
 
-              remoteWork: vacancy.remoteWork,
+          workLocation: vacancy?.workLocation || null,
 
-              salaryMin: vacancy.salaryMin,
+          remoteWork: vacancy?.remoteWork || null,
 
-              salaryMax: vacancy.salaryMax,
+          salaryMin: vacancy?.salaryMin ?? null,
 
-              salaryNote: vacancy.salaryNote,
-            }
-          : null,
+          salaryMax: vacancy?.salaryMax ?? null,
 
-        provider: provider
-          ? {
-              registerId: provider.registerId,
-
-              name: provider.name,
-
-              companyName: provider.companyName,
-
-              email: provider.email,
-            }
-          : null,
-
-        adminReview: {
-          reviewedAt: application.admin_reviewed_at,
-
-          reviewedBy: application.admin_reviewed_by,
-
-          rejectionReason: application.admin_rejection_reason,
+          salaryNote: vacancy?.salaryNote || null,
         },
+
+        // ============================================
+        // PROVIDER
+        // ============================================
+
+        provider: {
+          registerId: provider?.registerId || application.provider_id,
+
+          name: provider?.name || null,
+
+          companyName: provider?.companyName || vacancy?.companyName || null,
+
+          email: provider?.email || null,
+        },
+
+        // ============================================
+        // STAFF SCREENING
+        // ============================================
+
+        staffScreening: serializeStaffScreening(application),
+
+        // ============================================
+        // ADMIN REVIEW
+        // ============================================
+
+        adminReview: serializeAdminReview(application),
+
+        // ============================================
+        // RESUME
+        // ============================================
 
         resumeAvailable: Boolean(
           application.profile_snapshot?.generated_resume_file ||
@@ -517,6 +587,14 @@ exports.approveAdminApplication = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // IMPORTANT
+    //
+    // Staff screening is advisory.
+    //
+    // Admin remains the final decision maker.
+    // ==================================================
+
     application.status = "SENT_TO_PROVIDER";
 
     application.admin_reviewed_at = new Date();
@@ -540,6 +618,8 @@ exports.approveAdminApplication = async (req, res) => {
         reviewedAt: application.admin_reviewed_at,
 
         reviewedBy: application.admin_reviewed_by,
+
+        rejectionReason: null,
       },
     });
   } catch (error) {

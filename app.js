@@ -78,11 +78,17 @@ const Profile = require("./models/providers/profileSchema");
 
 const bootstrapAdmin = require("./utils/bootstrapAdmin");
 
+// ======================================================
+// STAFF ROUTES
+// ======================================================
+
 const adminStaffRoutes = require("./routes/admin/staffRoutes");
 
 const staffAuthRoutes = require("./routes/staff/authRoutes");
 
 const staffDashboardRoutes = require("./routes/staff/dashboardRoutes");
+
+const staffApplicationRoutes = require("./routes/staff/applicationRoutes");
 
 // ======================================================
 // APP
@@ -244,6 +250,8 @@ app.use("/api/admin/staff", adminStaffRoutes);
 app.use("/api/staff/auth", staffAuthRoutes);
 
 app.use("/api/staff/dashboard", staffDashboardRoutes);
+
+app.use("/api/staff/applications", staffApplicationRoutes);
 
 // ======================================================
 // NOT FOUND

@@ -240,7 +240,41 @@ const applicationSchema = new mongoose.Schema(
 
       index: true,
     },
+    // ======================================================
+    // STAFF SCREENING
+    // ======================================================
+    //
+    // Staff screening does NOT approve or reject the
+    // application.
+    //
+    // Final application approval belongs to Admin.
+    //
+    // ======================================================
 
+    staff_screening_status: {
+      type: String,
+      enum: ["NOT_SCREENED", "SCREENED", "NEEDS_ATTENTION"],
+      default: "NOT_SCREENED",
+      index: true,
+    },
+
+    staff_screening_note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    screened_by_staff_id: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    screened_at: {
+      type: Date,
+      default: null,
+    },
     // --------------------------------------------------
     // ADMIN REVIEW
     // --------------------------------------------------
@@ -327,7 +361,4 @@ applicationSchema.index({
 // MODEL
 // ======================================================
 
-module.exports = mongoose.model(
-  "Application",
-  applicationSchema,
-);
+module.exports = mongoose.model("Application", applicationSchema);
