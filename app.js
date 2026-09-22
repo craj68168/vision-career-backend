@@ -94,6 +94,8 @@ const staffVacancyRoutes = require("./routes/staff/vacancyRoutes");
 
 const staffSeekerRoutes = require("./routes/staff/seekerRoutes");
 
+const staffProviderRoutes = require("./routes/staff/providerRoutes");
+
 // ======================================================
 // APP
 // ======================================================
@@ -260,6 +262,8 @@ app.use("/api/staff/applications", staffApplicationRoutes);
 app.use("/api/staff/vacancies", staffVacancyRoutes);
 
 app.use("/api/staff/seekers", staffSeekerRoutes);
+
+app.use("/api/staff/providers", staffProviderRoutes);
 
 // ======================================================
 // NOT FOUND

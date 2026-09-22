@@ -8,6 +8,20 @@ const Application = require("../../models/applications/applicationSchema");
 const ALLOWED_STATUSES = ["active", "inactive", "suspended"];
 
 // ======================================================
+// STAFF REVIEW
+// ======================================================
+
+const buildStaffReview = (profile) => ({
+  status: profile?.staff_review_status || "NOT_REVIEWED",
+
+  note: profile?.staff_review_note || null,
+
+  reviewedByStaffId: profile?.reviewed_by_staff_id || null,
+
+  reviewedAt: profile?.staff_reviewed_at || null,
+});
+
+// ======================================================
 // HELPERS
 // ======================================================
 
@@ -18,16 +32,23 @@ const buildProfileResponse = ({
   applicationCount = 0,
 }) => ({
   registerId: register.registerId,
+
   name: register.name,
+
   companyName: register.companyName,
+
   email: register.email,
+
   role: register.role,
 
   status: profile?.status || "active",
 
   phone: profile?.phone || null,
+
   address: profile?.address || null,
+
   website: profile?.website || null,
+
   industry: profile?.industry || null,
 
   contactPerson: profile?.contact_person || null,
@@ -41,9 +62,13 @@ const buildProfileResponse = ({
   notes: profile?.notes || null,
 
   vacancyCount,
+
   applicationCount,
 
+  staffReview: buildStaffReview(profile),
+
   createdAt: register.createdAt,
+
   updatedAt: register.updatedAt,
 });
 
@@ -80,9 +105,11 @@ exports.getProviders = async (req, res) => {
             },
           },
         },
+
         {
           $group: {
             _id: "$registerId",
+
             count: {
               $sum: 1,
             },
@@ -98,9 +125,11 @@ exports.getProviders = async (req, res) => {
             },
           },
         },
+
         {
           $group: {
             _id: "$provider_id",
+
             count: {
               $sum: 1,
             },
@@ -124,11 +153,18 @@ exports.getProviders = async (req, res) => {
     const data = registers.map((register) =>
       buildProfileResponse({
         register,
+
         profile: profileMap.get(register.registerId),
+
         vacancyCount: vacancyCountMap.get(register.registerId) || 0,
+
         applicationCount: applicationCountMap.get(register.registerId) || 0,
       }),
     );
+
+    // ==================================================
+    // SUMMARY
+    // ==================================================
 
     const summary = {
       total: data.length,
@@ -156,12 +192,27 @@ exports.getProviders = async (req, res) => {
         (total, provider) => total + provider.applicationCount,
         0,
       ),
+
+      notReviewed: data.filter(
+        (provider) => provider.staffReview.status === "NOT_REVIEWED",
+      ).length,
+
+      reviewed: data.filter(
+        (provider) => provider.staffReview.status === "REVIEWED",
+      ).length,
+
+      needsAttention: data.filter(
+        (provider) => provider.staffReview.status === "NEEDS_ATTENTION",
+      ).length,
     };
 
     return res.status(200).json({
       success: true,
+
       count: data.length,
+
       summary,
+
       data,
     });
   } catch (error) {
@@ -169,6 +220,7 @@ exports.getProviders = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to load providers.",
     });
   }
@@ -186,12 +238,14 @@ exports.getProviderById = async (req, res) => {
 
     const register = await Register.findOne({
       registerId,
+
       role: "provider",
     }).lean();
 
     if (!register) {
       return res.status(404).json({
         success: false,
+
         message: "Provider not found.",
       });
     }
@@ -212,10 +266,14 @@ exports.getProviderById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       data: buildProfileResponse({
         register,
+
         profile,
+
         vacancyCount,
+
         applicationCount,
       }),
     });
@@ -224,6 +282,7 @@ exports.getProviderById = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to load provider.",
     });
   }
@@ -263,6 +322,7 @@ exports.createProvider = async (req, res) => {
     if (!name || !companyName || !email || !password) {
       return res.status(400).json({
         success: false,
+
         message: "Name, company name, email and password are required.",
       });
     }
@@ -270,6 +330,7 @@ exports.createProvider = async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({
         success: false,
+
         message: "Password must be at least 8 characters.",
       });
     }
@@ -277,6 +338,7 @@ exports.createProvider = async (req, res) => {
     if (!ALLOWED_STATUSES.includes(status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid provider status.",
       });
     }
@@ -290,6 +352,7 @@ exports.createProvider = async (req, res) => {
     if (existing) {
       return res.status(409).json({
         success: false,
+
         message: "Email already exists.",
       });
     }
@@ -340,6 +403,7 @@ exports.createProvider = async (req, res) => {
 
     return res.status(201).json({
       success: true,
+
       message: "Provider created successfully.",
 
       data: buildProfileResponse({
@@ -363,6 +427,7 @@ exports.createProvider = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: error.message || "Failed to create provider.",
     });
   }
@@ -380,12 +445,14 @@ exports.updateProvider = async (req, res) => {
 
     const register = await Register.findOne({
       registerId,
+
       role: "provider",
     }).select("+password");
 
     if (!register) {
       return res.status(404).json({
         success: false,
+
         message: "Provider not found.",
       });
     }
@@ -411,6 +478,10 @@ exports.updateProvider = async (req, res) => {
       status,
     } = req.body;
 
+    // ==================================================
+    // EMAIL
+    // ==================================================
+
     if (email !== undefined) {
       const normalizedEmail = email.trim().toLowerCase();
 
@@ -425,12 +496,17 @@ exports.updateProvider = async (req, res) => {
       if (existing) {
         return res.status(409).json({
           success: false,
+
           message: "Email already exists.",
         });
       }
 
       register.email = normalizedEmail;
     }
+
+    // ==================================================
+    // REGISTER
+    // ==================================================
 
     if (name !== undefined) {
       register.name = name.trim();
@@ -444,6 +520,7 @@ exports.updateProvider = async (req, res) => {
       if (password.length < 8) {
         return res.status(400).json({
           success: false,
+
           message: "Password must be at least 8 characters.",
         });
       }
@@ -454,11 +531,16 @@ exports.updateProvider = async (req, res) => {
     if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid provider status.",
       });
     }
 
     await register.save();
+
+    // ==================================================
+    // PROFILE
+    // ==================================================
 
     const profileUpdate = {
       name: register.name,
@@ -562,6 +644,7 @@ exports.updateProvider = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: error.message || "Failed to update provider.",
     });
   }
@@ -589,6 +672,7 @@ exports.updateProviderStatus = async (req, res) => {
 
     const register = await Register.findOne({
       registerId,
+
       role: "provider",
     });
 
