@@ -76,22 +76,65 @@ const deleteStoredFile = (fileUrl) => {
 // ======================================================
 // ADMIN SEEKER RESPONSE
 // ======================================================
+// ======================================================
+// ADMIN SEEKER RESPONSE
+// ======================================================
 
 const serializeSeeker = (seeker, applicationsCount = 0) => {
   const item =
-    typeof seeker.toObject === "function" ? seeker.toObject() : seeker;
+    typeof seeker.toObject === "function" ? seeker.toObject() : { ...seeker };
+
+  // ==================================================
+  // STAFF SCREENING
+  // ==================================================
+
+  const staffScreening = {
+    status: item.staff_screening_status || "NOT_SCREENED",
+
+    note: item.staff_screening_note || null,
+
+    screenedByStaffId: item.screened_by_staff_id || null,
+
+    screenedAt: item.screened_at || null,
+  };
+
+  // ==================================================
+  // REMOVE PRIVATE / INTERNAL FIELDS
+  // ==================================================
 
   delete item.password;
+
   delete item.password_reset_code_hash;
+
   delete item.password_reset_code_expires;
+
   delete item.password_reset_attempts;
+
   delete item.password_reset_token_hash;
+
   delete item.password_reset_token_expires;
+
   delete item.__v;
+
+  // We expose these using staffScreening instead.
+  delete item.staff_screening_status;
+
+  delete item.staff_screening_note;
+
+  delete item.screened_by_staff_id;
+
+  delete item.screened_at;
+
+  // ==================================================
+  // RESPONSE
+  // ==================================================
 
   return {
     ...item,
+
     applications_count: applicationsCount,
+
+    staffScreening,
   };
 };
 

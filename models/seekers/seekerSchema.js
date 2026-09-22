@@ -212,6 +212,35 @@ const seekerSchema = new mongoose.Schema(
     },
 
     // ==================================================
+    // STAFF SCREENING
+    // ==================================================
+
+    staff_screening_status: {
+      type: String,
+      enum: ["NOT_SCREENED", "SCREENED", "NEEDS_ATTENTION"],
+      default: "NOT_SCREENED",
+      index: true,
+    },
+
+    staff_screening_note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    screened_by_staff_id: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    screened_at: {
+      type: Date,
+      default: null,
+    },
+
+    // ==================================================
     // BASIC PROFILE
     // ==================================================
 
