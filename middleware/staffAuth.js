@@ -8,6 +8,10 @@ const Staff = require("../models/admin/staffSchema");
 
 const staffAuth = async (req, res, next) => {
   try {
+    // ==================================================
+    // AUTHORIZATION
+    // ==================================================
+
     const authorization = req.headers.authorization;
 
     if (!authorization || !authorization.startsWith("Bearer ")) {
@@ -17,6 +21,10 @@ const staffAuth = async (req, res, next) => {
         message: "Staff authentication required.",
       });
     }
+
+    // ==================================================
+    // TOKEN
+    // ==================================================
 
     const token = authorization.split(" ")[1];
 
@@ -28,6 +36,10 @@ const staffAuth = async (req, res, next) => {
       });
     }
 
+    // ==================================================
+    // CONFIG
+    // ==================================================
+
     if (!process.env.JWT_SECRET) {
       return res.status(500).json({
         success: false,
@@ -35,6 +47,10 @@ const staffAuth = async (req, res, next) => {
         message: "Authentication configuration error.",
       });
     }
+
+    // ==================================================
+    // VERIFY JWT
+    // ==================================================
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -91,7 +107,31 @@ const staffAuth = async (req, res, next) => {
     }
 
     // ==================================================
-    // ATTACH TO REQUEST
+    // PASSWORD CHANGE TOKEN INVALIDATION
+    //
+    // JWT iat = seconds
+    // passwordChangedAt = milliseconds
+    //
+    // Every token issued before password change becomes
+    // invalid.
+    // ==================================================
+
+    if (staff.passwordChangedAt && decoded.iat) {
+      const passwordChangedAtSeconds = Math.floor(
+        staff.passwordChangedAt.getTime() / 1000,
+      );
+
+      if (decoded.iat < passwordChangedAtSeconds) {
+        return res.status(401).json({
+          success: false,
+
+          message: "Your password has changed. Please login again.",
+        });
+      }
+    }
+
+    // ==================================================
+    // ATTACH STAFF
     // ==================================================
 
     req.staff = {
@@ -103,7 +143,7 @@ const staffAuth = async (req, res, next) => {
 
       role: "staff",
 
-      permissions: staff.permissions,
+      permissions: staff.permissions || [],
     };
 
     return next();

@@ -1,6 +1,10 @@
 const express = require("express");
 
-const { login, me } = require("../../controllers/admin/authController");
+const {
+  login,
+  me,
+  updateCredentials,
+} = require("../../controllers/admin/authController");
 
 const adminAuth = require("../../middleware/adminAuth");
 
@@ -21,5 +25,13 @@ router.post("/login", login);
 // ======================================================
 
 router.get("/me", adminAuth, me);
+
+// ======================================================
+// UPDATE CREDENTIALS
+//
+// PATCH /api/admin/auth/credentials
+// ======================================================
+
+router.patch("/credentials", adminAuth, updateCredentials);
 
 module.exports = router;

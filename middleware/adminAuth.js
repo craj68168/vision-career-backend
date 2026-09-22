@@ -9,7 +9,7 @@ const Admin = require("../models/admin/adminSchema");
 const adminAuth = async (req, res, next) => {
   try {
     // ==================================================
-    // READ AUTHORIZATION HEADER
+    // AUTHORIZATION HEADER
     // ==================================================
 
     const authorization = req.headers.authorization;
@@ -17,12 +17,13 @@ const adminAuth = async (req, res, next) => {
     if (!authorization || !authorization.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
+
         message: "Authentication required.",
       });
     }
 
     // ==================================================
-    // EXTRACT TOKEN
+    // TOKEN
     // ==================================================
 
     const token = authorization.split(" ")[1];
@@ -30,6 +31,7 @@ const adminAuth = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
+
         message: "Authentication token missing.",
       });
     }
@@ -43,18 +45,19 @@ const adminAuth = async (req, res, next) => {
     }
 
     // ==================================================
-    // VERIFY TOKEN
+    // VERIFY
     // ==================================================
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // ==================================================
-    // CHECK ROLE
+    // ROLE
     // ==================================================
 
     if (decoded.role !== "admin" || !decoded.adminId) {
       return res.status(403).json({
         success: false,
+
         message: "Admin access required.",
       });
     }
@@ -70,17 +73,19 @@ const adminAuth = async (req, res, next) => {
     if (!admin) {
       return res.status(401).json({
         success: false,
+
         message: "Admin account not found.",
       });
     }
 
     // ==================================================
-    // CHECK ACCOUNT STATUS
+    // STATUS
     // ==================================================
 
     if (admin.status !== "active") {
       return res.status(403).json({
         success: false,
+
         message:
           admin.status === "suspended"
             ? "Admin account is suspended."
@@ -89,16 +94,38 @@ const adminAuth = async (req, res, next) => {
     }
 
     // ==================================================
-    // ATTACH ADMIN TO REQUEST
+    // PASSWORD CHANGE TOKEN INVALIDATION
+    //
+    // JWT iat is stored in seconds.
+    // ==================================================
+
+    if (admin.passwordChangedAt && decoded.iat) {
+      const passwordChangedAtSeconds = Math.floor(
+        admin.passwordChangedAt.getTime() / 1000,
+      );
+
+      if (decoded.iat < passwordChangedAtSeconds) {
+        return res.status(401).json({
+          success: false,
+
+          message: "Your password has changed. Please login again.",
+        });
+      }
+    }
+
+    // ==================================================
+    // ATTACH ADMIN
     // ==================================================
 
     req.admin = {
       adminId: admin.adminId,
+
       username: admin.username,
+
       role: admin.role,
     };
 
-    next();
+    return next();
   } catch (error) {
     console.error("ADMIN AUTH ERROR:", error);
 
@@ -108,12 +135,14 @@ const adminAuth = async (req, res, next) => {
     ) {
       return res.status(401).json({
         success: false,
+
         message: "Invalid or expired authentication token.",
       });
     }
 
     return res.status(500).json({
       success: false,
+
       message: "Authentication failed.",
     });
   }
