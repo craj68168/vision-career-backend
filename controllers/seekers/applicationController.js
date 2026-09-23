@@ -1,19 +1,21 @@
 const crypto = require("crypto");
 
-const fs = require("fs");
-
-const path = require("path");
-
 const Application = require("../../models/applications/applicationSchema");
 
 const Seeker = require("../../models/seekers/seekerSchema");
 
 const Vacancy = require("../../models/providers/vacancySchema");
 
+const { generateResumePdf } = require("../../services/resumeService");
+
+const { uploadBuffer } = require("../../services/storageService");
+
+const { createStorageReference } = require("../../utils/storageReference");
+
 const {
-  generateResumePdf,
-  APPLICATION_RESUME_DIR,
-} = require("../../services/resumeService");
+  deleteApplicationResumeReference,
+  sendApplicationResume,
+} = require("../../utils/applicationResumeStorage");
 
 // ======================================================
 // GET START OF TODAY
@@ -425,7 +427,9 @@ const buildProfileSnapshot = (seeker) => {
 // ======================================================
 
 exports.applyForVacancy = async (req, res) => {
-  let applicationResumePath = null;
+  let applicationId = null;
+
+  let applicationResumeReference = null;
 
   try {
     // ================================================
@@ -511,18 +515,6 @@ exports.applyForVacancy = async (req, res) => {
     // ================================================
     // APPLICATION DEADLINE
     // ================================================
-    //
-    // Example:
-    //
-    // Deadline = September 16
-    //
-    // September 16:
-    // APPLY = YES
-    //
-    // September 17:
-    // APPLY = NO
-    //
-    // ================================================
 
     const todayStart = getTodayStartUTC();
 
@@ -539,8 +531,6 @@ exports.applyForVacancy = async (req, res) => {
 
     // ================================================
     // PROVIDER ID FROM VACANCY
-    //
-    // NEVER accept provider ID from frontend.
     // ================================================
 
     const providerId = vacancy.registerId;
@@ -575,10 +565,10 @@ exports.applyForVacancy = async (req, res) => {
     // GENERATE APPLICATION ID
     // ================================================
 
-    const applicationId = generateApplicationId();
+    applicationId = generateApplicationId();
 
     // ================================================
-    // GENERATE APPLICATION-SPECIFIC RESUME
+    // GENERATE APPLICATION-SPECIFIC FROZEN RESUME
     // ================================================
 
     const generatedResume = await generateResumePdf(seeker, {
@@ -587,7 +577,26 @@ exports.applyForVacancy = async (req, res) => {
       applicationId,
     });
 
-    applicationResumePath = generatedResume.absolutePath;
+    // ================================================
+    // UPLOAD FROZEN RESUME TO SUPABASE
+    //
+    // applications/
+    //   APP-XXXXXXXX/
+    //     resume/
+    //       uuid-APP-XXXXXXXX.pdf
+    // ================================================
+
+    const uploadedResume = await uploadBuffer({
+      buffer: generatedResume.buffer,
+
+      fileName: generatedResume.fileName,
+
+      mimeType: "application/pdf",
+
+      folder: `applications/${applicationId}/resume`,
+    });
+
+    applicationResumeReference = createStorageReference(uploadedResume.key);
 
     // ================================================
     // BUILD PROFILE SNAPSHOT
@@ -595,7 +604,7 @@ exports.applyForVacancy = async (req, res) => {
 
     const profileSnapshot = buildProfileSnapshot(seeker);
 
-    profileSnapshot.generated_resume_file = generatedResume.relativePath;
+    profileSnapshot.generated_resume_file = applicationResumeReference;
 
     // ================================================
     // CREATE APPLICATION
@@ -618,6 +627,15 @@ exports.applyForVacancy = async (req, res) => {
 
       applied_at: new Date(),
     });
+
+    // ==================================================
+    // DATABASE SAVE SUCCEEDED
+    //
+    // The frozen resume now belongs permanently to this
+    // application.
+    // ==================================================
+
+    applicationResumeReference = null;
 
     // ================================================
     // SUCCESS
@@ -643,12 +661,20 @@ exports.applyForVacancy = async (req, res) => {
     console.error("Apply for vacancy error:", error);
 
     // ================================================
-    // REMOVE ORPHAN APPLICATION RESUME
+    // REMOVE ORPHAN SUPABASE RESUME
+    //
+    // Example:
+    // Upload succeeds but MongoDB application creation
+    // fails.
     // ================================================
 
-    if (applicationResumePath && fs.existsSync(applicationResumePath)) {
+    if (applicationResumeReference) {
       try {
-        fs.unlinkSync(applicationResumePath);
+        await deleteApplicationResumeReference({
+          storedPath: applicationResumeReference,
+
+          applicationId,
+        });
       } catch (cleanupError) {
         console.error("Application resume cleanup error:", cleanupError);
       }
@@ -678,10 +704,6 @@ exports.applyForVacancy = async (req, res) => {
       });
     }
 
-    // ================================================
-    // SERVER ERROR
-    // ================================================
-
     return res.status(500).json({
       success: false,
 
@@ -694,7 +716,6 @@ exports.applyForVacancy = async (req, res) => {
 // GET MY APPLICATIONS
 //
 // GET /api/seekers/applications
-//
 // ======================================================
 
 exports.getMyApplications = async (req, res) => {
@@ -702,10 +723,6 @@ exports.getMyApplications = async (req, res) => {
     const seekerId = req.user.seeker_id;
 
     const { status } = req.query;
-
-    // ================================================
-    // FILTER
-    // ================================================
 
     const filter = {
       seeker_id: seekerId,
@@ -715,17 +732,9 @@ exports.getMyApplications = async (req, res) => {
       filter.status = status;
     }
 
-    // ================================================
-    // APPLICATIONS
-    // ================================================
-
     const applications = await Application.find(filter).sort({
       applied_at: -1,
     });
-
-    // ================================================
-    // GET RELATED VACANCIES
-    // ================================================
 
     const vacancyIds = [
       ...new Set(applications.map((application) => application.vacancy_id)),
@@ -740,27 +749,15 @@ exports.getMyApplications = async (req, res) => {
           })
         : [];
 
-    // ================================================
-    // CREATE VACANCY MAP
-    // ================================================
-
     const vacancyMap = new Map(
       vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
     );
-
-    // ================================================
-    // COMBINE APPLICATION + SAFE VACANCY
-    // ================================================
 
     const data = applications.map((application) => ({
       ...toSeekerApplication(application),
 
       vacancy: toSeekerVacancySummary(vacancyMap.get(application.vacancy_id)),
     }));
-
-    // ================================================
-    // RESPONSE
-    // ================================================
 
     return res.status(200).json({
       success: true,
@@ -783,9 +780,7 @@ exports.getMyApplications = async (req, res) => {
 // ======================================================
 // GET ONE APPLICATION
 //
-// GET
-// /api/seekers/applications/:application_id
-//
+// GET /api/seekers/applications/:application_id
 // ======================================================
 
 exports.getMyApplicationById = async (req, res) => {
@@ -793,10 +788,6 @@ exports.getMyApplicationById = async (req, res) => {
     const seekerId = req.user.seeker_id;
 
     const { application_id } = req.params;
-
-    // ================================================
-    // FIND APPLICATION
-    // ================================================
 
     const application = await Application.findOne({
       application_id,
@@ -812,17 +803,9 @@ exports.getMyApplicationById = async (req, res) => {
       });
     }
 
-    // ================================================
-    // RELATED VACANCY
-    // ================================================
-
     const vacancy = await Vacancy.findOne({
       vacancyId: application.vacancy_id,
     });
-
-    // ================================================
-    // RESPONSE
-    // ================================================
 
     return res.status(200).json({
       success: true,
@@ -845,11 +828,10 @@ exports.getMyApplicationById = async (req, res) => {
 };
 
 // ======================================================
-// VIEW APPLICATION RESUME
+// VIEW APPLICATION FROZEN RESUME
 //
 // GET
 // /api/seekers/applications/:application_id/resume
-//
 // ======================================================
 
 exports.getMyApplicationResume = async (req, res) => {
@@ -858,15 +840,11 @@ exports.getMyApplicationResume = async (req, res) => {
 
     const { application_id } = req.params;
 
-    // ================================================
-    // FIND APPLICATION OWNED BY SEEKER
-    // ================================================
-
     const application = await Application.findOne({
       application_id,
 
       seeker_id: seekerId,
-    });
+    }).lean();
 
     if (!application) {
       return res.status(404).json({
@@ -876,13 +854,13 @@ exports.getMyApplicationResume = async (req, res) => {
       });
     }
 
-    // ================================================
-    // GET STORED RESUME PATH
-    // ================================================
+    // ==================================================
+    // FROZEN APPLICATION RESUME ONLY
+    // ==================================================
 
-    const resumePath = application.profile_snapshot?.generated_resume_file;
+    const storedResume = application.profile_snapshot?.generated_resume_file;
 
-    if (!resumePath) {
+    if (!storedResume) {
       return res.status(404).json({
         success: false,
 
@@ -890,60 +868,44 @@ exports.getMyApplicationResume = async (req, res) => {
       });
     }
 
-    // ================================================
-    // SECURITY
+    // ==================================================
+    // Supports:
     //
-    // Only application-generated resumes are allowed.
-    // ================================================
+    // New:
+    // storage://applications/...
+    //
+    // Legacy:
+    // application-resumes/APP-XXXXXXXX.pdf
+    // ==================================================
 
-    if (!resumePath.startsWith("application-resumes/")) {
-      return res.status(404).json({
-        success: false,
+    await sendApplicationResume({
+      res,
 
-        message: "Application resume is not available.",
-      });
-    }
+      storedPath: storedResume,
 
-    // ================================================
-    // FILE
-    // ================================================
+      applicationId: application.application_id,
+    });
 
-    const fileName = path.basename(resumePath);
-
-    const absolutePath = path.join(
-      APPLICATION_RESUME_DIR,
-
-      fileName,
-    );
-
-    // ================================================
-    // FILE EXISTS
-    // ================================================
-
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({
-        success: false,
-
-        message: "Application resume file not found.",
-      });
-    }
-
-    // ================================================
-    // SEND PDF
-    // ================================================
-
-    res.setHeader("Content-Type", "application/pdf");
-
-    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
-
-    return res.sendFile(absolutePath);
+    return undefined;
   } catch (error) {
     console.error("Get application resume error:", error);
 
-    return res.status(500).json({
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
       success: false,
 
-      message: "Failed to get application resume.",
+      message:
+        statusCode === 404
+          ? "Application resume file not found."
+          : statusCode === 403
+            ? "Application resume access denied."
+            : "Failed to get application resume.",
     });
   }
 };

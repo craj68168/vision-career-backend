@@ -1,6 +1,3 @@
-const fs = require("fs");
-const path = require("path");
-
 const Application = require("../../models/applications/applicationSchema");
 
 const Seeker = require("../../models/seekers/seekerSchema");
@@ -8,6 +5,10 @@ const Seeker = require("../../models/seekers/seekerSchema");
 const Vacancy = require("../../models/providers/vacancySchema");
 
 const Provider = require("../../models/providers/registerSchema");
+
+const {
+  sendApplicationResume,
+} = require("../../utils/applicationResumeStorage");
 
 // ======================================================
 // APPLICATION STATUSES
@@ -134,10 +135,6 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
 
     coverLetter: application.cover_letter || null,
 
-    // ==================================================
-    // CANDIDATE
-    // ==================================================
-
     candidate: {
       name: seeker?.name || application.profile_snapshot?.name || "Unknown",
 
@@ -161,10 +158,6 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
         null,
     },
 
-    // ==================================================
-    // VACANCY
-    // ==================================================
-
     vacancy: {
       vacancyId: vacancy?.vacancyId || application.vacancy_id,
 
@@ -182,10 +175,6 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
       salaryMax: vacancy?.salaryMax ?? null,
     },
 
-    // ==================================================
-    // PROVIDER
-    // ==================================================
-
     provider: {
       registerId: provider?.registerId || application.provider_id,
 
@@ -196,22 +185,14 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
       email: provider?.email || null,
     },
 
-    // ==================================================
-    // STAFF SCREENING
-    // ==================================================
-
     staffScreening: serializeStaffScreening(application),
-
-    // ==================================================
-    // ADMIN REVIEW
-    // ==================================================
 
     adminReview: serializeAdminReview(application),
   };
 };
 
 // ======================================================
-// GET SUMMARY
+// SUMMARY
 // ======================================================
 
 const getApplicationSummary = async () => {
@@ -254,8 +235,6 @@ const getApplicationSummary = async () => {
 
 // ======================================================
 // GET ALL ADMIN APPLICATIONS
-//
-// GET /api/admin/applications
 // ======================================================
 
 exports.getAdminApplications = async (req, res) => {
@@ -293,10 +272,6 @@ exports.getAdminApplications = async (req, res) => {
         providerMap.get(application.provider_id),
       ),
     );
-
-    // ==================================================
-    // SEARCH
-    // ==================================================
 
     if (search) {
       data = data.filter((application) => {
@@ -357,8 +332,6 @@ exports.getAdminApplications = async (req, res) => {
 
 // ======================================================
 // GET APPLICATION DETAILS
-//
-// GET /api/admin/applications/:applicationId
 // ======================================================
 
 exports.getAdminApplicationById = async (req, res) => {
@@ -408,10 +381,6 @@ exports.getAdminApplicationById = async (req, res) => {
         coverLetter: application.cover_letter || null,
 
         appliedAt: application.applied_at,
-
-        // ============================================
-        // CANDIDATE
-        // ============================================
 
         candidate: {
           name: seeker?.name || application.profile_snapshot?.name || "Unknown",
@@ -469,10 +438,6 @@ exports.getAdminApplicationById = async (req, res) => {
             [],
         },
 
-        // ============================================
-        // VACANCY
-        // ============================================
-
         vacancy: {
           vacancyId: vacancy?.vacancyId || application.vacancy_id,
 
@@ -508,10 +473,6 @@ exports.getAdminApplicationById = async (req, res) => {
           salaryNote: vacancy?.salaryNote || null,
         },
 
-        // ============================================
-        // PROVIDER
-        // ============================================
-
         provider: {
           registerId: provider?.registerId || application.provider_id,
 
@@ -522,26 +483,19 @@ exports.getAdminApplicationById = async (req, res) => {
           email: provider?.email || null,
         },
 
-        // ============================================
-        // STAFF SCREENING
-        // ============================================
-
         staffScreening: serializeStaffScreening(application),
-
-        // ============================================
-        // ADMIN REVIEW
-        // ============================================
 
         adminReview: serializeAdminReview(application),
 
-        // ============================================
-        // RESUME
-        // ============================================
+        // ==================================================
+        // IMPORTANT
+        //
+        // Resume availability comes ONLY from the frozen
+        // application snapshot.
+        // ==================================================
 
         resumeAvailable: Boolean(
-          application.profile_snapshot?.generated_resume_file ||
-          seeker?.generated_resume_file ||
-          seeker?.resume_file,
+          application.profile_snapshot?.generated_resume_file,
         ),
       },
     });
@@ -558,9 +512,6 @@ exports.getAdminApplicationById = async (req, res) => {
 
 // ======================================================
 // APPROVE APPLICATION
-//
-// PATCH
-// /api/admin/applications/:applicationId/approve
 // ======================================================
 
 exports.approveAdminApplication = async (req, res) => {
@@ -586,14 +537,6 @@ exports.approveAdminApplication = async (req, res) => {
         message: "Only applications pending Admin approval can be approved.",
       });
     }
-
-    // ==================================================
-    // IMPORTANT
-    //
-    // Staff screening is advisory.
-    //
-    // Admin remains the final decision maker.
-    // ==================================================
 
     application.status = "SENT_TO_PROVIDER";
 
@@ -635,9 +578,6 @@ exports.approveAdminApplication = async (req, res) => {
 
 // ======================================================
 // REJECT APPLICATION
-//
-// PATCH
-// /api/admin/applications/:applicationId/reject
 // ======================================================
 
 exports.rejectAdminApplication = async (req, res) => {
@@ -722,38 +662,9 @@ exports.rejectAdminApplication = async (req, res) => {
 };
 
 // ======================================================
-// FIND STORED RESUME
-// ======================================================
-
-const resolveResumePath = (storedPath) => {
-  if (!storedPath) {
-    return null;
-  }
-
-  if (path.isAbsolute(storedPath) && fs.existsSync(storedPath)) {
-    return storedPath;
-  }
-
-  const cleanPath = storedPath.replace(/^\/+/, "").replace(/\\/g, "/");
-
-  const filename = path.basename(cleanPath);
-
-  const candidates = [
-    path.join(process.cwd(), cleanPath),
-
-    path.join(process.cwd(), "uploads", filename),
-
-    path.join(process.cwd(), "private_uploads", filename),
-  ];
-
-  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
-};
-
-// ======================================================
-// GET APPLICATION RESUME
+// GET APPLICATION FROZEN RESUME
 //
-// GET
-// /api/admin/applications/:applicationId/resume
+// GET /api/admin/applications/:applicationId/resume
 // ======================================================
 
 exports.getAdminApplicationResume = async (req, res) => {
@@ -772,41 +683,55 @@ exports.getAdminApplicationResume = async (req, res) => {
       });
     }
 
-    const seeker = await Seeker.findOne({
-      seeker_id: application.seeker_id,
-    }).lean();
+    // ==================================================
+    // ADMIN MUST SEE THE FROZEN APPLICATION RESUME.
+    //
+    // Do NOT fall back to:
+    //
+    // seeker.generated_resume_file
+    // seeker.resume_file
+    //
+    // because those may have changed after application.
+    // ==================================================
 
-    const storedResume =
-      application.profile_snapshot?.generated_resume_file ||
-      seeker?.generated_resume_file ||
-      seeker?.resume_file;
+    const storedResume = application.profile_snapshot?.generated_resume_file;
 
     if (!storedResume) {
       return res.status(404).json({
         success: false,
 
-        message: "Resume not found.",
+        message: "Application resume not found.",
       });
     }
 
-    const resolvedPath = resolveResumePath(storedResume);
+    await sendApplicationResume({
+      res,
 
-    if (!resolvedPath) {
-      return res.status(404).json({
-        success: false,
+      storedPath: storedResume,
 
-        message: "Resume file does not exist.",
-      });
-    }
+      applicationId: application.application_id,
+    });
 
-    return res.sendFile(resolvedPath);
+    return undefined;
   } catch (error) {
     console.error("GET ADMIN APPLICATION RESUME ERROR:", error);
 
-    return res.status(500).json({
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
       success: false,
 
-      message: "Failed to load resume.",
+      message:
+        statusCode === 404
+          ? "Application resume file does not exist."
+          : statusCode === 403
+            ? "Application resume access denied."
+            : "Failed to load resume.",
     });
   }
 };

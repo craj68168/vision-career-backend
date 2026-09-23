@@ -5,6 +5,22 @@ const path = require("path");
 // ======================================================
 // FOLDERS
 // ======================================================
+//
+// GENERATED_RESUME_DIR
+// --------------------
+// Kept unchanged for the existing profile-generated
+// resume feature. We are NOT migrating that feature yet.
+//
+// APPLICATION_RESUME_DIR
+// ----------------------
+// Kept only for backward compatibility with older
+// application records that still contain:
+//
+// application-resumes/APP-XXXXXXXX.pdf
+//
+// New application resumes are generated in memory and
+// uploaded to Supabase by applicationController.
+// ======================================================
 
 const GENERATED_RESUME_DIR = path.join(
   __dirname,
@@ -94,59 +110,181 @@ const addLabelValue = (doc, label, value) => {
 };
 
 // ======================================================
-// GENERATE RESUME PDF
+// CREATE PDF DOCUMENT
 // ======================================================
 
-const generateResumePdf = async (seeker, options = {}) => {
-  const { type = "profile", applicationId = null } = options;
+const createPdfDocument = () => {
+  return new PDFDocument({
+    size: "A4",
 
-  let fileName;
-  let outputDirectory;
-  let relativePath;
+    margins: {
+      top: 50,
+      bottom: 50,
+      left: 55,
+      right: 55,
+    },
+  });
+};
 
-  // ======================================================
-  // APPLICATION RESUME
-  // ======================================================
+// ======================================================
+// WRITE RESUME CONTENT
+// ======================================================
 
-  if (type === "application") {
-    if (!applicationId) {
-      throw new Error("applicationId is required for application resume.");
-    }
+const writeResumeContent = (doc, seeker) => {
+  // --------------------------------------------------
+  // TITLE
+  // --------------------------------------------------
 
-    fileName = `${applicationId}.pdf`;
+  setBoldFont(doc);
 
-    outputDirectory = APPLICATION_RESUME_DIR;
+  doc.fontSize(22).text("Professional Resume", {
+    align: "center",
+  });
 
-    relativePath = `application-resumes/${fileName}`;
+  doc.moveDown();
 
-    // ======================================================
-    // PROFILE RESUME
-    // ======================================================
+  // --------------------------------------------------
+  // PROFESSIONAL INFORMATION
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Professional Information");
+
+  addLabelValue(doc, "Name", seeker.name);
+
+  addLabelValue(doc, "Nationality", seeker.nationality);
+
+  addLabelValue(doc, "Visa Type", seeker.visa_type);
+
+  addLabelValue(doc, "Visa Expiry", formatDate(seeker.visa_expiry_date));
+
+  addLabelValue(doc, "Japanese Level", seeker.japanese_level);
+
+  addLabelValue(doc, "Desired Job", seeker.desired_job);
+
+  addLabelValue(doc, "Desired Location", seeker.desired_location);
+
+  // --------------------------------------------------
+  // SKILLS
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Skills");
+
+  setRegularFont(doc);
+
+  doc.fontSize(10).text(seeker.skills?.length ? seeker.skills.join(", ") : "-");
+
+  // --------------------------------------------------
+  // EDUCATION
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Education");
+
+  if (seeker.education?.length) {
+    seeker.education.forEach((education) => {
+      setBoldFont(doc);
+
+      doc.fontSize(11).text(education.school || "-");
+
+      setRegularFont(doc);
+
+      doc.fontSize(10).text(`Major: ${education.major || "-"}`);
+
+      doc
+        .fontSize(10)
+        .text(
+          `${formatDate(education.enrollment_date)} - ${formatDate(
+            education.graduation_date,
+          )}`,
+        );
+
+      doc.moveDown(0.7);
+    });
   } else {
-    fileName = `${seeker.seeker_id}-${Date.now()}.pdf`;
-
-    outputDirectory = GENERATED_RESUME_DIR;
-
-    relativePath = `generated-resumes/${fileName}`;
+    doc.text("-");
   }
 
-  const absolutePath = path.join(outputDirectory, fileName);
+  // --------------------------------------------------
+  // EMPLOYMENT
+  // --------------------------------------------------
 
-  // ==================================================
-  // YOUR EXISTING PDFKIT CODE GOES HERE
-  // ==================================================
+  addSectionTitle(doc, "Employment History");
+
+  if (seeker.employment_history?.length) {
+    seeker.employment_history.forEach((employment) => {
+      setBoldFont(doc);
+
+      doc.fontSize(11).text(employment.company_name || "-");
+
+      setRegularFont(doc);
+
+      doc
+        .fontSize(10)
+        .text(`Employment Type: ${employment.employment_type || "-"}`);
+
+      const endDate = employment.end_date
+        ? formatDate(employment.end_date)
+        : "Present";
+
+      doc
+        .fontSize(10)
+        .text(`${formatDate(employment.start_date)} - ${endDate}`);
+
+      doc.moveDown(0.7);
+    });
+  } else {
+    doc.text("-");
+  }
+};
+
+// ======================================================
+// GENERATE PDF BUFFER
+//
+// Used for application-specific frozen resumes.
+// Nothing is written to local disk.
+// ======================================================
+
+const generateResumeBuffer = async (seeker) => {
+  return new Promise((resolve, reject) => {
+    const doc = createPdfDocument();
+
+    const chunks = [];
+
+    doc.on("data", (chunk) => {
+      chunks.push(chunk);
+    });
+
+    doc.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    doc.on("error", reject);
+
+    try {
+      writeResumeContent(doc, seeker);
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+// ======================================================
+// GENERATE LOCAL PROFILE RESUME
+//
+// Existing behavior is intentionally preserved until the
+// generated-profile-resume feature is reviewed separately.
+// ======================================================
+
+const generateLocalProfileResume = async (seeker) => {
+  const fileName = `${seeker.seeker_id}-${Date.now()}.pdf`;
+
+  const relativePath = `generated-resumes/${fileName}`;
+
+  const absolutePath = path.join(GENERATED_RESUME_DIR, fileName);
 
   await new Promise((resolve, reject) => {
-    const doc = new PDFDocument({
-      size: "A4",
-
-      margins: {
-        top: 50,
-        bottom: 50,
-        left: 55,
-        right: 55,
-      },
-    });
+    const doc = createPdfDocument();
 
     const stream = fs.createWriteStream(absolutePath);
 
@@ -156,120 +294,62 @@ const generateResumePdf = async (seeker, options = {}) => {
 
     doc.pipe(stream);
 
-    // ----------------------------------------------
-    // TITLE
-    // ----------------------------------------------
+    try {
+      writeResumeContent(doc, seeker);
 
-    setBoldFont(doc);
-
-    doc.fontSize(22).text("Professional Resume", {
-      align: "center",
-    });
-
-    doc.moveDown();
-
-    // ----------------------------------------------
-    // PROFESSIONAL INFORMATION
-    // ----------------------------------------------
-
-    addSectionTitle(doc, "Professional Information");
-
-    addLabelValue(doc, "Name", seeker.name);
-
-    addLabelValue(doc, "Nationality", seeker.nationality);
-
-    addLabelValue(doc, "Visa Type", seeker.visa_type);
-
-    addLabelValue(doc, "Visa Expiry", formatDate(seeker.visa_expiry_date));
-
-    addLabelValue(doc, "Japanese Level", seeker.japanese_level);
-
-    addLabelValue(doc, "Desired Job", seeker.desired_job);
-
-    addLabelValue(doc, "Desired Location", seeker.desired_location);
-
-    // ----------------------------------------------
-    // SKILLS
-    // ----------------------------------------------
-
-    addSectionTitle(doc, "Skills");
-
-    setRegularFont(doc);
-
-    doc
-      .fontSize(10)
-      .text(seeker.skills?.length ? seeker.skills.join(", ") : "-");
-
-    // ----------------------------------------------
-    // EDUCATION
-    // ----------------------------------------------
-
-    addSectionTitle(doc, "Education");
-
-    if (seeker.education?.length) {
-      seeker.education.forEach((education) => {
-        setBoldFont(doc);
-
-        doc.fontSize(11).text(education.school || "-");
-
-        setRegularFont(doc);
-
-        doc.fontSize(10).text(`Major: ${education.major || "-"}`);
-
-        doc
-          .fontSize(10)
-          .text(
-            `${formatDate(education.enrollment_date)} - ${formatDate(
-              education.graduation_date,
-            )}`,
-          );
-
-        doc.moveDown(0.7);
-      });
-    } else {
-      doc.text("-");
+      doc.end();
+    } catch (error) {
+      reject(error);
     }
-
-    // ----------------------------------------------
-    // EMPLOYMENT
-    // ----------------------------------------------
-
-    addSectionTitle(doc, "Employment History");
-
-    if (seeker.employment_history?.length) {
-      seeker.employment_history.forEach((employment) => {
-        setBoldFont(doc);
-
-        doc.fontSize(11).text(employment.company_name || "-");
-
-        setRegularFont(doc);
-
-        doc
-          .fontSize(10)
-          .text(`Employment Type: ${employment.employment_type || "-"}`);
-
-        const endDate = employment.end_date
-          ? formatDate(employment.end_date)
-          : "Present";
-
-        doc
-          .fontSize(10)
-          .text(`${formatDate(employment.start_date)} - ${endDate}`);
-
-        doc.moveDown(0.7);
-      });
-    } else {
-      doc.text("-");
-    }
-
-    doc.end();
   });
 
   return {
     fileName,
+
     relativePath,
+
     absolutePath,
   };
+};
+
+// ======================================================
+// GENERATE RESUME PDF
+// ======================================================
+
+const generateResumePdf = async (seeker, options = {}) => {
+  const { type = "profile", applicationId = null } = options;
+
+  // ====================================================
+  // APPLICATION RESUME
+  //
+  // Generate completely in memory.
+  // applicationController uploads the returned buffer to
+  // Supabase private storage.
+  // ====================================================
+
+  if (type === "application") {
+    if (!applicationId) {
+      throw new Error("applicationId is required for application resume.");
+    }
+
+    const fileName = `${applicationId}.pdf`;
+
+    const buffer = await generateResumeBuffer(seeker);
+
+    return {
+      fileName,
+
+      buffer,
+
+      mimeType: "application/pdf",
+    };
+  }
+
+  // ====================================================
+  // PROFILE GENERATED RESUME
+  // ====================================================
+
+  return generateLocalProfileResume(seeker);
 };
 
 // ======================================================

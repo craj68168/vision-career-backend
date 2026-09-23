@@ -6,7 +6,11 @@ const requireStaffPermission = require("../../middleware/requireStaffPermission"
 
 const {
   getApplications,
+
   getApplicationById,
+
+  getStaffApplicationResume,
+
   screenApplication,
 } = require("../../controllers/staff/applicationController");
 
@@ -21,9 +25,31 @@ const router = express.Router();
 
 router.get(
   "/",
+
   staffAuth,
+
   requireStaffPermission("applications:view"),
+
   getApplications,
+);
+
+// ======================================================
+// APPLICATION FROZEN RESUME
+//
+// Permission:
+// applications:view
+//
+// Keep before /:applicationId.
+// ======================================================
+
+router.get(
+  "/:applicationId/resume",
+
+  staffAuth,
+
+  requireStaffPermission("applications:view"),
+
+  getStaffApplicationResume,
 );
 
 // ======================================================
@@ -35,8 +61,11 @@ router.get(
 
 router.get(
   "/:applicationId",
+
   staffAuth,
+
   requireStaffPermission("applications:view"),
+
   getApplicationById,
 );
 
@@ -49,8 +78,11 @@ router.get(
 
 router.patch(
   "/:applicationId/screen",
+
   staffAuth,
+
   requireStaffPermission("applications:review"),
+
   screenApplication,
 );
 

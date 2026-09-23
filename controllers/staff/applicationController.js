@@ -2,6 +2,10 @@ const Application = require("../../models/applications/applicationSchema");
 
 const Vacancy = require("../../models/providers/vacancySchema");
 
+const {
+  sendApplicationResume,
+} = require("../../utils/applicationResumeStorage");
+
 // ======================================================
 // SAFE APPLICATION SERIALIZER
 // ======================================================
@@ -23,10 +27,6 @@ const serializeApplication = (application, vacancy) => ({
 
   updatedAt: application.updated_at,
 
-  // ====================================================
-  // STAFF SCREENING
-  // ====================================================
-
   screening: {
     status: application.staff_screening_status || "NOT_SCREENED",
 
@@ -38,16 +38,13 @@ const serializeApplication = (application, vacancy) => ({
   },
 
   // ====================================================
-  // PROFESSIONAL CANDIDATE SNAPSHOT
+  // PROFESSIONAL CANDIDATE SNAPSHOT ONLY
   //
-  // We intentionally do NOT expose:
-  //
-  // - email
-  // - phone
-  // - address
-  // - profile photo
-  // - private documents
-  //
+  // No email
+  // No phone
+  // No address
+  // No profile photo
+  // No private documents
   // ====================================================
 
   applicant: {
@@ -75,10 +72,6 @@ const serializeApplication = (application, vacancy) => ({
       application.profile_snapshot?.generated_resume_file,
     ),
   },
-
-  // ====================================================
-  // VACANCY
-  // ====================================================
 
   vacancy: vacancy
     ? {
@@ -140,8 +133,6 @@ const loadVacancyMap = async (applications) => {
 
 // ======================================================
 // GET STAFF APPLICATIONS
-//
-// GET /api/staff/applications
 // ======================================================
 
 exports.getApplications = async (req, res) => {
@@ -155,7 +146,11 @@ exports.getApplications = async (req, res) => {
     const vacancyMap = await loadVacancyMap(applications);
 
     const data = applications.map((application) =>
-      serializeApplication(application, vacancyMap.get(application.vacancy_id)),
+      serializeApplication(
+        application,
+
+        vacancyMap.get(application.vacancy_id),
+      ),
     );
 
     return res.status(200).json({
@@ -199,8 +194,6 @@ exports.getApplications = async (req, res) => {
 
 // ======================================================
 // GET ONE APPLICATION
-//
-// GET /api/staff/applications/:applicationId
 // ======================================================
 
 exports.getApplicationById = async (req, res) => {
@@ -251,28 +244,77 @@ exports.getApplicationById = async (req, res) => {
 };
 
 // ======================================================
+// GET APPLICATION FROZEN RESUME
+//
+// GET /api/staff/applications/:applicationId/resume
+//
+// Requires:
+// applications:view
+// ======================================================
+
+exports.getStaffApplicationResume = async (req, res) => {
+  try {
+    const application = await Application.findOne({
+      application_id: req.params.applicationId,
+    }).lean();
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Application not found.",
+      });
+    }
+
+    const storedResume = application.profile_snapshot?.generated_resume_file;
+
+    if (!storedResume) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Application resume is not available.",
+      });
+    }
+
+    await sendApplicationResume({
+      res,
+
+      storedPath: storedResume,
+
+      applicationId: application.application_id,
+    });
+
+    return undefined;
+  } catch (error) {
+    console.error("GET STAFF APPLICATION RESUME ERROR:", error);
+
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
+      success: false,
+
+      message:
+        statusCode === 404
+          ? "Application resume file not found."
+          : statusCode === 403
+            ? "Application resume access denied."
+            : "Failed to load application resume.",
+    });
+  }
+};
+
+// ======================================================
 // SCREEN APPLICATION
-//
-// PATCH /api/staff/applications/:applicationId/screen
-//
-// IMPORTANT:
-//
-// This does NOT modify application.status.
-//
-// Staff only records:
-// - SCREENED
-// - NEEDS_ATTENTION
-//
-// Admin still performs final approval/rejection.
 // ======================================================
 
 exports.screenApplication = async (req, res) => {
   try {
     const { screeningStatus, note } = req.body;
-
-    // ==================================================
-    // VALID SCREENING STATUS
-    // ==================================================
 
     if (!["SCREENED", "NEEDS_ATTENTION"].includes(screeningStatus)) {
       return res.status(400).json({
@@ -281,10 +323,6 @@ exports.screenApplication = async (req, res) => {
         message: "Invalid screening status.",
       });
     }
-
-    // ==================================================
-    // NOTE REQUIRED FOR NEEDS ATTENTION
-    // ==================================================
 
     if (screeningStatus === "NEEDS_ATTENTION" && !String(note || "").trim()) {
       return res.status(400).json({
@@ -303,10 +341,6 @@ exports.screenApplication = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // APPLICATION
-    // ==================================================
-
     const application = await Application.findOne({
       application_id: req.params.applicationId,
     });
@@ -319,10 +353,6 @@ exports.screenApplication = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // ONLY PENDING ADMIN APPLICATIONS MAY BE SCREENED
-    // ==================================================
-
     if (application.status !== "PENDING_ADMIN_APPROVAL") {
       return res.status(409).json({
         success: false,
@@ -331,10 +361,6 @@ exports.screenApplication = async (req, res) => {
           "Only applications waiting for Admin approval can be screened.",
       });
     }
-
-    // ==================================================
-    // SAVE SCREENING RESULT
-    // ==================================================
 
     application.staff_screening_status = screeningStatus;
 
@@ -371,7 +397,11 @@ exports.screenApplication = async (req, res) => {
           ? "Application screening completed."
           : "Application marked as needing Admin attention.",
 
-      data: serializeApplication(application.toObject(), vacancy),
+      data: serializeApplication(
+        application.toObject(),
+
+        vacancy,
+      ),
     });
   } catch (error) {
     console.error("SCREEN STAFF APPLICATION ERROR:", error);

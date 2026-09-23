@@ -1,11 +1,10 @@
-const fs = require("fs");
-const path = require("path");
-
 const Application = require("../../models/applications/applicationSchema");
 
 const Vacancy = require("../../models/providers/vacancySchema");
 
-const { APPLICATION_RESUME_DIR } = require("../../services/resumeService");
+const {
+  sendApplicationResume,
+} = require("../../utils/applicationResumeStorage");
 
 // ======================================================
 // PROVIDER VISIBLE APPLICATION STATUSES
@@ -17,7 +16,6 @@ const { APPLICATION_RESUME_DIR } = require("../../services/resumeService");
 // ADMIN_REJECTED
 //
 // Only applications approved by Admin are visible.
-//
 // ======================================================
 
 const PROVIDER_VISIBLE_STATUSES = [
@@ -81,28 +79,19 @@ const toProviderVacancySummary = (vacancy) => {
 // SAFE PROVIDER APPLICATION RESPONSE
 // ======================================================
 //
-// IMPORTANT:
-//
 // Provider may see:
 //
-// - Candidate name
-// - Nationality
-// - Visa
-// - Japanese level
-// - Skills
-// - Education
-// - Employment history
-// - Professional resume
+// Candidate professional snapshot
+// Application-specific professional resume
 //
-// Provider must NOT receive:
+// Provider does NOT receive:
 //
-// - seeker_id
-// - email
-// - phone
-// - full address
-// - private documents
-// - generated resume file path
-//
+// seeker_id
+// email
+// phone
+// address
+// private documents
+// raw Supabase path
 // ======================================================
 
 const toProviderApplication = (application, vacancy) => {
@@ -121,15 +110,7 @@ const toProviderApplication = (application, vacancy) => {
 
     updated_at: data.updated_at,
 
-    // ==================================================
-    // RESUME AVAILABILITY
-    // ==================================================
-
     resume_available: Boolean(data.profile_snapshot?.generated_resume_file),
-
-    // ==================================================
-    // PROFESSIONAL APPLICANT PROFILE
-    // ==================================================
 
     applicant: {
       name: data.profile_snapshot?.name || null,
@@ -153,21 +134,12 @@ const toProviderApplication = (application, vacancy) => {
       employment_history: data.profile_snapshot?.employment_history || [],
     },
 
-    // ==================================================
-    // VACANCY
-    // ==================================================
-
     vacancy: toProviderVacancySummary(vacancy),
   };
 };
 
 // ======================================================
 // GET PROVIDER APPLICATIONS
-//
-// GET /api/providers/applications
-//
-// Only applications belonging to logged-in provider.
-//
 // ======================================================
 
 exports.getProviderApplications = async (req, res) => {
@@ -184,10 +156,6 @@ exports.getProviderApplications = async (req, res) => {
 
     const { status } = req.query;
 
-    // ================================================
-    // FILTER
-    // ================================================
-
     const filter = {
       provider_id: registerId,
 
@@ -195,10 +163,6 @@ exports.getProviderApplications = async (req, res) => {
         $in: PROVIDER_VISIBLE_STATUSES,
       },
     };
-
-    // ================================================
-    // OPTIONAL STATUS FILTER
-    // ================================================
 
     if (status) {
       if (!PROVIDER_VISIBLE_STATUSES.includes(status)) {
@@ -212,25 +176,13 @@ exports.getProviderApplications = async (req, res) => {
       filter.status = status;
     }
 
-    // ================================================
-    // APPLICATIONS
-    // ================================================
-
     const applications = await Application.find(filter).sort({
       applied_at: -1,
     });
 
-    // ================================================
-    // GET VACANCY IDS
-    // ================================================
-
     const vacancyIds = [
       ...new Set(applications.map((application) => application.vacancy_id)),
     ];
-
-    // ================================================
-    // RELATED VACANCIES
-    // ================================================
 
     const vacancies =
       vacancyIds.length > 0
@@ -243,17 +195,9 @@ exports.getProviderApplications = async (req, res) => {
           })
         : [];
 
-    // ================================================
-    // VACANCY LOOKUP MAP
-    // ================================================
-
     const vacancyMap = new Map(
       vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
     );
-
-    // ================================================
-    // SAFE RESPONSE
-    // ================================================
 
     const data = applications.map((application) =>
       toProviderApplication(
@@ -283,10 +227,6 @@ exports.getProviderApplications = async (req, res) => {
 
 // ======================================================
 // GET ONE PROVIDER APPLICATION
-//
-// GET
-// /api/providers/applications/:applicationId
-//
 // ======================================================
 
 exports.getProviderApplicationById = async (req, res) => {
@@ -303,10 +243,6 @@ exports.getProviderApplicationById = async (req, res) => {
       });
     }
 
-    // ================================================
-    // APPLICATION MUST BELONG TO THIS PROVIDER
-    // ================================================
-
     const application = await Application.findOne({
       application_id: applicationId,
 
@@ -325,24 +261,20 @@ exports.getProviderApplicationById = async (req, res) => {
       });
     }
 
-    // ================================================
-    // RELATED VACANCY
-    // ================================================
-
     const vacancy = await Vacancy.findOne({
       vacancyId: application.vacancy_id,
 
       registerId,
     });
 
-    // ================================================
-    // RESPONSE
-    // ================================================
-
     return res.status(200).json({
       status: "success",
 
-      data: toProviderApplication(application, vacancy),
+      data: toProviderApplication(
+        application,
+
+        vacancy,
+      ),
     });
   } catch (error) {
     console.error("Get provider application error:", error);
@@ -356,17 +288,13 @@ exports.getProviderApplicationById = async (req, res) => {
 };
 
 // ======================================================
-// GET APPLICATION RESUME
-//
-// GET
-// /api/providers/applications/:applicationId/resume
+// GET APPLICATION FROZEN RESUME
 //
 // Provider can only access:
 //
-// - application belonging to them
-// - application already approved by Admin
-// - application-specific resume
-//
+// application belonging to this Provider
+// application already approved by Admin
+// frozen application-specific resume
 // ======================================================
 
 exports.getProviderApplicationResume = async (req, res) => {
@@ -383,10 +311,6 @@ exports.getProviderApplicationResume = async (req, res) => {
       });
     }
 
-    // ================================================
-    // APPLICATION OWNERSHIP
-    // ================================================
-
     const application = await Application.findOne({
       application_id: applicationId,
 
@@ -395,7 +319,7 @@ exports.getProviderApplicationResume = async (req, res) => {
       status: {
         $in: PROVIDER_VISIBLE_STATUSES,
       },
-    });
+    }).lean();
 
     if (!application) {
       return res.status(404).json({
@@ -405,13 +329,9 @@ exports.getProviderApplicationResume = async (req, res) => {
       });
     }
 
-    // ================================================
-    // RESUME PATH
-    // ================================================
+    const storedResume = application.profile_snapshot?.generated_resume_file;
 
-    const resumePath = application.profile_snapshot?.generated_resume_file;
-
-    if (!resumePath) {
+    if (!storedResume) {
       return res.status(404).json({
         status: "error",
 
@@ -419,89 +339,40 @@ exports.getProviderApplicationResume = async (req, res) => {
       });
     }
 
-    // ================================================
-    // SECURITY
-    //
-    // Never allow arbitrary paths.
-    // Only application-specific generated resumes.
-    // ================================================
+    await sendApplicationResume({
+      res,
 
-    if (!resumePath.startsWith("application-resumes/")) {
-      return res.status(403).json({
-        status: "error",
+      storedPath: storedResume,
 
-        message: "Resume access denied.",
-      });
-    }
+      applicationId: application.application_id,
+    });
 
-    // ================================================
-    // FILE NAME
-    // ================================================
-
-    const fileName = path.basename(resumePath);
-
-    const absolutePath = path.join(APPLICATION_RESUME_DIR, fileName);
-
-    // ================================================
-    // FILE EXISTS
-    // ================================================
-
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({
-        status: "error",
-
-        message: "Resume file not found.",
-      });
-    }
-
-    // ================================================
-    // SEND PDF
-    // ================================================
-
-    res.setHeader("Content-Type", "application/pdf");
-
-    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
-
-    return res.sendFile(absolutePath);
+    return undefined;
   } catch (error) {
     console.error("Provider resume error:", error);
 
-    return res.status(500).json({
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
       status: "error",
 
-      message: "Failed to load resume.",
+      message:
+        statusCode === 404
+          ? "Resume file not found."
+          : statusCode === 403
+            ? "Resume access denied."
+            : "Failed to load resume.",
     });
   }
 };
 
 // ======================================================
 // UPDATE APPLICATION STATUS
-//
-// PATCH
-// /api/providers/applications/:applicationId/status
-//
-// BODY EXAMPLES:
-//
-// {
-//   "status": "UNDER_REVIEW"
-// }
-//
-// {
-//   "status": "INTERVIEW"
-// }
-//
-// {
-//   "status": "SELECTED"
-// }
-//
-// {
-//   "status": "HIRED"
-// }
-//
-// {
-//   "status": "REJECTED"
-// }
-//
 // ======================================================
 
 exports.updateProviderApplicationStatus = async (req, res) => {
@@ -512,10 +383,6 @@ exports.updateProviderApplicationStatus = async (req, res) => {
 
     const { status } = req.body;
 
-    // ================================================
-    // AUTH
-    // ================================================
-
     if (!registerId) {
       return res.status(401).json({
         status: "error",
@@ -523,10 +390,6 @@ exports.updateProviderApplicationStatus = async (req, res) => {
         message: "Provider authentication required.",
       });
     }
-
-    // ================================================
-    // STATUS REQUIRED
-    // ================================================
 
     if (!status) {
       return res.status(400).json({
@@ -536,10 +399,6 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       });
     }
 
-    // ================================================
-    // VALID STATUS
-    // ================================================
-
     if (!PROVIDER_UPDATE_STATUSES.includes(status)) {
       return res.status(400).json({
         status: "error",
@@ -547,12 +406,6 @@ exports.updateProviderApplicationStatus = async (req, res) => {
         message: "Invalid application status.",
       });
     }
-
-    // ================================================
-    // FIND APPLICATION
-    //
-    // Provider ownership is mandatory.
-    // ================================================
 
     const application = await Application.findOne({
       application_id: applicationId,
@@ -572,10 +425,6 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       });
     }
 
-    // ================================================
-    // TERMINAL APPLICATIONS
-    // ================================================
-
     if (application.status === "HIRED" || application.status === "REJECTED") {
       return res.status(400).json({
         status: "error",
@@ -584,17 +433,9 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       });
     }
 
-    // ================================================
-    // UPDATE
-    // ================================================
-
     application.status = status;
 
     await application.save();
-
-    // ================================================
-    // RELATED VACANCY
-    // ================================================
 
     const vacancy = await Vacancy.findOne({
       vacancyId: application.vacancy_id,
@@ -602,16 +443,16 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       registerId,
     });
 
-    // ================================================
-    // RESPONSE
-    // ================================================
-
     return res.status(200).json({
       status: "success",
 
       message: "Application status updated successfully.",
 
-      data: toProviderApplication(application, vacancy),
+      data: toProviderApplication(
+        application,
+
+        vacancy,
+      ),
     });
   } catch (error) {
     console.error("Update provider application status error:", error);
