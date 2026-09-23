@@ -6,6 +6,12 @@ const path = require("path");
 const Seeker = require("../../models/seekers/seekerSchema");
 const Application = require("../../models/applications/applicationSchema");
 
+const {
+  deleteFileReferences,
+  isStorageReference,
+  resolveFileReference,
+} = require("../../utils/storageReference");
+
 // ======================================================
 // CONSTANTS
 // ======================================================
@@ -54,35 +60,43 @@ const generateUniqueSeekerId = async () => {
 };
 
 // ======================================================
-// DELETE FILE
+// RESOLVE OTHER DOCUMENTS
 // ======================================================
 
-const deleteStoredFile = (fileUrl) => {
-  if (!fileUrl) return;
-
-  try {
-    const fileName = path.basename(fileUrl);
-
-    const filePath = path.join(__dirname, "../../uploads", fileName);
-
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-  } catch (error) {
-    console.error("Failed to delete seeker file:", error);
+const resolveOtherDocuments = async (documents = []) => {
+  if (!Array.isArray(documents)) {
+    return [];
   }
+
+  return Promise.all(
+    documents.map(async (document) => {
+      const item =
+        typeof document?.toObject === "function"
+          ? document.toObject()
+          : {
+              ...document,
+            };
+
+      return {
+        ...item,
+
+        file_url: await resolveFileReference(item.file_url, 3600),
+      };
+    }),
+  );
 };
 
 // ======================================================
-// ADMIN SEEKER RESPONSE
-// ======================================================
-// ======================================================
-// ADMIN SEEKER RESPONSE
+// ADMIN SEEKER SERIALIZER
 // ======================================================
 
-const serializeSeeker = (seeker, applicationsCount = 0) => {
+const serializeSeeker = async (seeker, applicationsCount = 0) => {
   const item =
-    typeof seeker.toObject === "function" ? seeker.toObject() : { ...seeker };
+    typeof seeker.toObject === "function"
+      ? seeker.toObject()
+      : {
+          ...seeker,
+        };
 
   // ==================================================
   // STAFF SCREENING
@@ -99,7 +113,22 @@ const serializeSeeker = (seeker, applicationsCount = 0) => {
   };
 
   // ==================================================
-  // REMOVE PRIVATE / INTERNAL FIELDS
+  // PRIVATE STORAGE
+  // ==================================================
+
+  item.profile_photo = await resolveFileReference(item.profile_photo, 3600);
+
+  item.resume_file = await resolveFileReference(item.resume_file, 3600);
+
+  item.generated_resume_file = await resolveFileReference(
+    item.generated_resume_file,
+    3600,
+  );
+
+  item.other_documents = await resolveOtherDocuments(item.other_documents);
+
+  // ==================================================
+  // REMOVE INTERNAL FIELDS
   // ==================================================
 
   delete item.password;
@@ -116,7 +145,6 @@ const serializeSeeker = (seeker, applicationsCount = 0) => {
 
   delete item.__v;
 
-  // We expose these using staffScreening instead.
   delete item.staff_screening_status;
 
   delete item.staff_screening_note;
@@ -142,14 +170,6 @@ const serializeSeeker = (seeker, applicationsCount = 0) => {
 // GET ALL SEEKERS
 //
 // GET /api/admin/seekers
-//
-// Query:
-// search
-// approvalStatus
-// accountStatus
-// placementStatus
-// page
-// limit
 // ======================================================
 
 exports.getSeekers = async (req, res) => {
@@ -185,18 +205,23 @@ exports.getSeekers = async (req, res) => {
         {
           seeker_id: regex,
         },
+
         {
           name: regex,
         },
+
         {
           email: regex,
         },
+
         {
           phone: regex,
         },
+
         {
           current_location: regex,
         },
+
         {
           desired_job: regex,
         },
@@ -297,9 +322,11 @@ exports.getSeekers = async (req, res) => {
             },
           },
         },
+
         {
           $group: {
             _id: "$seeker_id",
+
             count: {
               $sum: 1,
             },
@@ -314,8 +341,18 @@ exports.getSeekers = async (req, res) => {
       }, {});
     }
 
-    const data = seekers.map((seeker) =>
-      serializeSeeker(seeker, applicationCountMap[seeker.seeker_id] || 0),
+    // ==================================================
+    // SERIALIZE
+    // ==================================================
+
+    const data = await Promise.all(
+      seekers.map((seeker) =>
+        serializeSeeker(
+          seeker,
+
+          applicationCountMap[seeker.seeker_id] || 0,
+        ),
+      ),
     );
 
     const pages = Math.max(Math.ceil(filteredCount / pageLimit), 1);
@@ -331,15 +368,20 @@ exports.getSeekers = async (req, res) => {
 
         approval: {
           pending: pendingApproval,
+
           approved,
+
           rejected,
         },
       },
 
       pagination: {
         page: currentPage,
+
         limit: pageLimit,
+
         total: filteredCount,
+
         pages,
       },
 
@@ -350,6 +392,7 @@ exports.getSeekers = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to load job seekers.",
     });
   }
@@ -372,6 +415,7 @@ exports.getSeekerById = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -383,13 +427,14 @@ exports.getSeekerById = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      data: serializeSeeker(seeker, applicationsCount),
+      data: await serializeSeeker(seeker, applicationsCount),
     });
   } catch (error) {
     console.error("GET ADMIN SEEKER ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to load job seeker details.",
     });
   }
@@ -409,11 +454,15 @@ exports.createSeeker = async (req, res) => {
       password,
 
       phone = null,
+
       current_location = null,
+
       nationality = null,
 
       approval_status = "approved",
+
       account_status = "active",
+
       placement_status = "unplaced",
     } = req.body;
 
@@ -424,6 +473,7 @@ exports.createSeeker = async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
+
         message: "Name, email and password are required.",
       });
     }
@@ -431,6 +481,7 @@ exports.createSeeker = async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({
         success: false,
+
         message: "Password must be at least 8 characters.",
       });
     }
@@ -442,6 +493,7 @@ exports.createSeeker = async (req, res) => {
     if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({
         success: false,
+
         message: "Please enter a valid email address.",
       });
     }
@@ -453,6 +505,7 @@ exports.createSeeker = async (req, res) => {
     if (existing) {
       return res.status(409).json({
         success: false,
+
         message: "A job seeker with this email already exists.",
       });
     }
@@ -460,6 +513,7 @@ exports.createSeeker = async (req, res) => {
     if (!APPROVAL_STATUSES.includes(approval_status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid approval status.",
       });
     }
@@ -467,6 +521,7 @@ exports.createSeeker = async (req, res) => {
     if (!ACCOUNT_STATUSES.includes(account_status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid account status.",
       });
     }
@@ -474,12 +529,13 @@ exports.createSeeker = async (req, res) => {
     if (!PLACEMENT_STATUSES.includes(placement_status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid placement status.",
       });
     }
 
     // ==================================================
-    // CONSISTENCY
+    // ACCOUNT CONSISTENCY
     // ==================================================
 
     let finalAccountStatus = account_status;
@@ -537,7 +593,7 @@ exports.createSeeker = async (req, res) => {
 
       message: "Job seeker created successfully.",
 
-      data: serializeSeeker(seeker, 0),
+      data: await serializeSeeker(seeker, 0),
     });
   } catch (error) {
     console.error("CREATE ADMIN SEEKER ERROR:", error);
@@ -545,6 +601,7 @@ exports.createSeeker = async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
+
         message: "Email or seeker ID already exists.",
       });
     }
@@ -552,12 +609,14 @@ exports.createSeeker = async (req, res) => {
     if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
+
         message: error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to create job seeker.",
     });
   }
@@ -567,13 +626,6 @@ exports.createSeeker = async (req, res) => {
 // UPDATE SEEKER PROFILE
 //
 // PATCH /api/admin/seekers/:seekerId
-//
-// DOES NOT directly change:
-// approval_status
-// account_status
-// placement_status
-//
-// Those use dedicated endpoints.
 // ======================================================
 
 exports.updateSeeker = async (req, res) => {
@@ -587,6 +639,7 @@ exports.updateSeeker = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -603,6 +656,7 @@ exports.updateSeeker = async (req, res) => {
       if (!emailRegex.test(normalizedEmail)) {
         return res.status(400).json({
           success: false,
+
           message: "Please enter a valid email address.",
         });
       }
@@ -618,6 +672,7 @@ exports.updateSeeker = async (req, res) => {
       if (duplicate) {
         return res.status(409).json({
           success: false,
+
           message: "Another job seeker already uses this email.",
         });
       }
@@ -660,6 +715,7 @@ exports.updateSeeker = async (req, res) => {
       if (!Array.isArray(req.body.skills)) {
         return res.status(400).json({
           success: false,
+
           message: "Skills must be an array.",
         });
       }
@@ -678,7 +734,7 @@ exports.updateSeeker = async (req, res) => {
 
       message: "Job seeker updated successfully.",
 
-      data: serializeSeeker(seeker, applicationsCount),
+      data: await serializeSeeker(seeker, applicationsCount),
     });
   } catch (error) {
     console.error("UPDATE ADMIN SEEKER ERROR:", error);
@@ -686,12 +742,14 @@ exports.updateSeeker = async (req, res) => {
     if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
+
         message: error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to update job seeker.",
     });
   }
@@ -700,21 +758,7 @@ exports.updateSeeker = async (req, res) => {
 // ======================================================
 // APPROVE / REJECT SEEKER
 //
-// PATCH
-// /api/admin/seekers/:seekerId/approval
-//
-// Body:
-//
-// {
-//   "decision": "approved"
-// }
-//
-// OR
-//
-// {
-//   "decision": "rejected",
-//   "reason": "..."
-// }
+// PATCH /api/admin/seekers/:seekerId/approval
 // ======================================================
 
 exports.updateApprovalStatus = async (req, res) => {
@@ -726,6 +770,7 @@ exports.updateApprovalStatus = async (req, res) => {
     if (!["approved", "rejected"].includes(decision)) {
       return res.status(400).json({
         success: false,
+
         message: "Decision must be approved or rejected.",
       });
     }
@@ -733,6 +778,7 @@ exports.updateApprovalStatus = async (req, res) => {
     if (decision === "rejected" && (!reason || !String(reason).trim())) {
       return res.status(400).json({
         success: false,
+
         message: "Rejection reason is required.",
       });
     }
@@ -744,6 +790,7 @@ exports.updateApprovalStatus = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -776,13 +823,14 @@ exports.updateApprovalStatus = async (req, res) => {
           ? "Job seeker approved successfully."
           : "Job seeker rejected successfully.",
 
-      data: serializeSeeker(seeker),
+      data: await serializeSeeker(seeker),
     });
   } catch (error) {
     console.error("UPDATE SEEKER APPROVAL ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to update approval status.",
     });
   }
@@ -791,22 +839,19 @@ exports.updateApprovalStatus = async (req, res) => {
 // ======================================================
 // UPDATE ACCOUNT STATUS
 //
-// PATCH
-// /api/admin/seekers/:seekerId/account-status
-//
-// {
-//   "status": "active"
-// }
+// PATCH /api/admin/seekers/:seekerId/account-status
 // ======================================================
 
 exports.updateAccountStatus = async (req, res) => {
   try {
     const { seekerId } = req.params;
+
     const { status } = req.body;
 
     if (!ACCOUNT_STATUSES.includes(status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid account status.",
       });
     }
@@ -818,6 +863,7 @@ exports.updateAccountStatus = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -825,6 +871,7 @@ exports.updateAccountStatus = async (req, res) => {
     if (status === "active" && seeker.approval_status !== "approved") {
       return res.status(400).json({
         success: false,
+
         message: "Only approved job seekers can be activated.",
       });
     }
@@ -838,13 +885,14 @@ exports.updateAccountStatus = async (req, res) => {
 
       message: "Account status updated successfully.",
 
-      data: serializeSeeker(seeker),
+      data: await serializeSeeker(seeker),
     });
   } catch (error) {
     console.error("UPDATE SEEKER ACCOUNT STATUS ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to update account status.",
     });
   }
@@ -853,18 +901,19 @@ exports.updateAccountStatus = async (req, res) => {
 // ======================================================
 // UPDATE PLACEMENT STATUS
 //
-// PATCH
-// /api/admin/seekers/:seekerId/placement-status
+// PATCH /api/admin/seekers/:seekerId/placement-status
 // ======================================================
 
 exports.updatePlacementStatus = async (req, res) => {
   try {
     const { seekerId } = req.params;
+
     const { status } = req.body;
 
     if (!PLACEMENT_STATUSES.includes(status)) {
       return res.status(400).json({
         success: false,
+
         message: "Invalid placement status.",
       });
     }
@@ -876,6 +925,7 @@ exports.updatePlacementStatus = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -889,13 +939,14 @@ exports.updatePlacementStatus = async (req, res) => {
 
       message: "Placement status updated successfully.",
 
-      data: serializeSeeker(seeker),
+      data: await serializeSeeker(seeker),
     });
   } catch (error) {
     console.error("UPDATE SEEKER PLACEMENT STATUS ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to update placement status.",
     });
   }
@@ -904,8 +955,7 @@ exports.updatePlacementStatus = async (req, res) => {
 // ======================================================
 // ADMIN DOWNLOAD SEEKER RESUME
 //
-// GET
-// /api/admin/seekers/:seekerId/resume
+// GET /api/admin/seekers/:seekerId/resume
 // ======================================================
 
 exports.getSeekerResume = async (req, res) => {
@@ -919,6 +969,7 @@ exports.getSeekerResume = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -928,27 +979,62 @@ exports.getSeekerResume = async (req, res) => {
     if (!resumeUrl) {
       return res.status(404).json({
         success: false,
+
         message: "This job seeker has no resume.",
       });
     }
 
+    // ==================================================
+    // SUPABASE STORAGE
+    // ==================================================
+
+    if (isStorageReference(resumeUrl)) {
+      const signedUrl = await resolveFileReference(resumeUrl, 300);
+
+      if (!signedUrl) {
+        return res.status(404).json({
+          success: false,
+
+          message: "Resume file not found.",
+        });
+      }
+
+      return res.redirect(302, signedUrl);
+    }
+
+    // ==================================================
+    // LEGACY LOCAL STORAGE
+    // ==================================================
+
     const fileName = path.basename(resumeUrl);
 
-    const filePath = path.join(__dirname, "../../uploads", fileName);
+    const candidates = [
+      path.join(process.cwd(), "uploads", fileName),
 
-    if (!fs.existsSync(filePath)) {
+      path.join(process.cwd(), "private_uploads", fileName),
+    ];
+
+    const filePath = candidates.find((candidate) => fs.existsSync(candidate));
+
+    if (!filePath) {
       return res.status(404).json({
         success: false,
+
         message: "Resume file not found.",
       });
     }
 
-    return res.download(filePath, `${seeker.seeker_id}-${fileName}`);
+    return res.download(
+      filePath,
+
+      `${seeker.seeker_id}-${fileName}`,
+    );
   } catch (error) {
     console.error("ADMIN DOWNLOAD SEEKER RESUME ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to download resume.",
     });
   }
@@ -958,13 +1044,6 @@ exports.getSeekerResume = async (req, res) => {
 // DELETE SEEKER
 //
 // DELETE /api/admin/seekers/:seekerId
-//
-// Safety:
-//
-// Cannot hard delete seeker with applications.
-// Cannot hard delete placed seeker.
-//
-// Instead use inactive/suspended.
 // ======================================================
 
 exports.deleteSeeker = async (req, res) => {
@@ -978,6 +1057,7 @@ exports.deleteSeeker = async (req, res) => {
     if (!seeker) {
       return res.status(404).json({
         success: false,
+
         message: "Job seeker not found.",
       });
     }
@@ -1004,22 +1084,39 @@ exports.deleteSeeker = async (req, res) => {
     }
 
     // ==================================================
-    // SAVE FILE REFERENCES BEFORE DELETE
+    // FILE REFERENCES
     // ==================================================
 
     const filesToDelete = [
       seeker.profile_photo,
+
       seeker.resume_file,
+
       seeker.generated_resume_file,
+
       ...(seeker.other_documents || []).map((document) => document.file_url),
     ].filter(Boolean);
 
+    // ==================================================
+    // DELETE SEEKER
+    // ==================================================
+
     await seeker.deleteOne();
 
-    filesToDelete.forEach(deleteStoredFile);
+    // ==================================================
+    // DELETE FILES
+    //
+    // Supports:
+    // storage://...
+    // /uploads/...
+    // /private_uploads/...
+    // ==================================================
+
+    await deleteFileReferences(filesToDelete);
 
     return res.status(200).json({
       success: true,
+
       message: "Job seeker deleted successfully.",
     });
   } catch (error) {
@@ -1027,6 +1124,7 @@ exports.deleteSeeker = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to delete job seeker.",
     });
   }

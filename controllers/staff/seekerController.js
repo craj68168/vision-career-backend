@@ -5,6 +5,11 @@ const Seeker = require("../../models/seekers/seekerSchema");
 
 const Application = require("../../models/applications/applicationSchema");
 
+const {
+  isStorageReference,
+  resolveFileReference,
+} = require("../../utils/storageReference");
+
 // ======================================================
 // CONSTANTS
 // ======================================================
@@ -46,12 +51,58 @@ const serializeScreening = (seeker) => ({
 });
 
 // ======================================================
+// RESOLVE OTHER DOCUMENTS
+// ======================================================
+
+const resolveOtherDocuments = async (documents = []) => {
+  if (!Array.isArray(documents)) {
+    return [];
+  }
+
+  return Promise.all(
+    documents.map(async (document) => {
+      const item =
+        typeof document?.toObject === "function"
+          ? document.toObject()
+          : {
+              ...document,
+            };
+
+      return {
+        ...item,
+
+        file_url: await resolveFileReference(item.file_url, 3600),
+      };
+    }),
+  );
+};
+
+// ======================================================
 // SEEKER SERIALIZER
 // ======================================================
 
-const serializeSeeker = (seeker, applicationsCount = 0) => {
+const serializeSeeker = async (seeker, applicationsCount = 0) => {
   const item =
     typeof seeker.toObject === "function" ? seeker.toObject() : seeker;
+
+  // ==================================================
+  // PRIVATE STORAGE URLS
+  // ==================================================
+
+  const profilePhoto = await resolveFileReference(item.profile_photo, 3600);
+
+  const resumeFile = await resolveFileReference(item.resume_file, 3600);
+
+  const generatedResumeFile = await resolveFileReference(
+    item.generated_resume_file,
+    3600,
+  );
+
+  const otherDocuments = await resolveOtherDocuments(item.other_documents);
+
+  // ==================================================
+  // RESPONSE
+  // ==================================================
 
   return {
     _id: item._id,
@@ -70,7 +121,7 @@ const serializeSeeker = (seeker, applicationsCount = 0) => {
 
     rejection_reason: item.rejection_reason || null,
 
-    profile_photo: item.profile_photo || null,
+    profile_photo: profilePhoto,
 
     phone: item.phone || null,
 
@@ -98,11 +149,11 @@ const serializeSeeker = (seeker, applicationsCount = 0) => {
 
     available_from: item.available_from || null,
 
-    resume_file: item.resume_file || null,
+    resume_file: resumeFile,
 
-    generated_resume_file: item.generated_resume_file || null,
+    generated_resume_file: generatedResumeFile,
 
-    other_documents: item.other_documents || [],
+    other_documents: otherDocuments,
 
     education: item.education || [],
 
@@ -166,11 +217,17 @@ exports.getStaffSeekers = async (req, res) => {
   try {
     const {
       search = "",
+
       approvalStatus = "",
+
       accountStatus = "",
+
       placementStatus = "",
+
       screeningStatus = "",
+
       page = "1",
+
       limit = "20",
     } = req.query;
 
@@ -267,13 +324,17 @@ exports.getStaffSeekers = async (req, res) => {
 
     const [
       seekers,
+
       filteredCount,
 
       total,
+
       pendingApproval,
 
       notScreened,
+
       screened,
+
       needsAttention,
     ] = await Promise.all([
       Seeker.find(filter)
@@ -329,11 +390,17 @@ exports.getStaffSeekers = async (req, res) => {
 
     const applicationCountMap = await getApplicationCountMap(seekerIds);
 
-    const data = seekers.map((seeker) =>
-      serializeSeeker(
-        seeker,
+    // ==================================================
+    // SIGNED URL SERIALIZATION
+    // ==================================================
 
-        applicationCountMap[seeker.seeker_id] || 0,
+    const data = await Promise.all(
+      seekers.map((seeker) =>
+        serializeSeeker(
+          seeker,
+
+          applicationCountMap[seeker.seeker_id] || 0,
+        ),
       ),
     );
 
@@ -406,7 +473,7 @@ exports.getStaffSeekerById = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      data: serializeSeeker(seeker, applicationsCount),
+      data: await serializeSeeker(seeker, applicationsCount),
     });
   } catch (error) {
     console.error("GET STAFF SEEKER ERROR:", error);
@@ -423,8 +490,6 @@ exports.getStaffSeekerById = async (req, res) => {
 // SCREEN SEEKER REGISTRATION
 //
 // PATCH /api/staff/seekers/:seekerId/screen
-//
-// Staff does NOT approve or reject.
 // ======================================================
 
 exports.screenStaffSeeker = async (req, res) => {
@@ -473,7 +538,7 @@ exports.screenStaffSeeker = async (req, res) => {
     }
 
     // ==================================================
-    // ONLY PENDING REGISTRATIONS CAN BE SCREENED
+    // ONLY PENDING SEEKERS
     // ==================================================
 
     if (seeker.approval_status !== "pending") {
@@ -506,7 +571,7 @@ exports.screenStaffSeeker = async (req, res) => {
           ? "Job Seeker screening completed."
           : "Job Seeker marked as needing Admin attention.",
 
-      data: serializeSeeker(seeker, applicationsCount),
+      data: await serializeSeeker(seeker, applicationsCount),
     });
   } catch (error) {
     console.error("SCREEN STAFF SEEKER ERROR:", error);
@@ -520,7 +585,7 @@ exports.screenStaffSeeker = async (req, res) => {
 };
 
 // ======================================================
-// RESUME
+// STAFF SEEKER RESUME
 //
 // GET /api/staff/seekers/:seekerId/resume
 // ======================================================
@@ -551,6 +616,28 @@ exports.getStaffSeekerResume = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // SUPABASE PRIVATE STORAGE
+    // ==================================================
+
+    if (isStorageReference(resumeUrl)) {
+      const signedUrl = await resolveFileReference(resumeUrl, 300);
+
+      if (!signedUrl) {
+        return res.status(404).json({
+          success: false,
+
+          message: "Resume file not found.",
+        });
+      }
+
+      return res.redirect(302, signedUrl);
+    }
+
+    // ==================================================
+    // LEGACY LOCAL STORAGE
+    // ==================================================
+
     const fileName = path.basename(resumeUrl);
 
     const candidates = [
@@ -569,7 +656,11 @@ exports.getStaffSeekerResume = async (req, res) => {
       });
     }
 
-    return res.download(filePath, `${seeker.seeker_id}-${fileName}`);
+    return res.download(
+      filePath,
+
+      `${seeker.seeker_id}-${fileName}`,
+    );
   } catch (error) {
     console.error("STAFF SEEKER RESUME ERROR:", error);
 
