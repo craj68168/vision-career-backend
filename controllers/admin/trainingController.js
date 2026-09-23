@@ -1,7 +1,3 @@
-const fs = require("fs");
-
-const path = require("path");
-
 const TrainingCounter = require("../../models/training/trainingCounterSchema");
 
 const TrainingCategory = require("../../models/training/trainingCategorySchema");
@@ -10,22 +6,38 @@ const TrainingTopic = require("../../models/training/trainingTopicSchema");
 
 const TrainingFile = require("../../models/training/trainingFileSchema");
 
+const { uploadMulterFile } = require("../../services/storageService");
+
+const { createStorageReference } = require("../../utils/storageReference");
+
+const {
+  deleteTrainingFileReference,
+  sendTrainingFile,
+} = require("../../utils/trainingStorage");
+
 // ======================================================
 // ID GENERATOR
 // ======================================================
 
-const nextTrainingId = async (counterName, prefix) => {
+const nextTrainingId = async (
+  counterName,
+
+  prefix,
+) => {
   const counter = await TrainingCounter.findByIdAndUpdate(
     {
       _id: counterName,
     },
+
     {
       $inc: {
         seq: 1,
       },
     },
+
     {
       new: true,
+
       upsert: true,
     },
   );
@@ -51,7 +63,11 @@ const slugify = (value) => {
 // UNIQUE CATEGORY SLUG
 // ======================================================
 
-const generateCategorySlug = async (name, excludeCategoryId = null) => {
+const generateCategorySlug = async (
+  name,
+
+  excludeCategoryId = null,
+) => {
   const base = slugify(name) || "category";
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -81,7 +97,13 @@ const generateCategorySlug = async (name, excludeCategoryId = null) => {
 // UNIQUE TOPIC SLUG
 // ======================================================
 
-const generateTopicSlug = async (categoryId, title, excludeTopicId = null) => {
+const generateTopicSlug = async (
+  categoryId,
+
+  title,
+
+  excludeTopicId = null,
+) => {
   const base = slugify(title) || "topic";
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -198,37 +220,24 @@ const getFileType = (mimeType) => {
 };
 
 // ======================================================
-// SAFE FILE DELETE
+// TRAINING FILE DELETE
+//
+// Supports:
+//
+// storage://training/...
+//
+// legacy private_uploads/training/...
 // ======================================================
 
-const deletePhysicalFile = async (filePath) => {
+const deleteStoredTrainingFile = async (filePath) => {
   if (!filePath) {
     return;
   }
 
-  const trainingDirectory = path.resolve(
-    process.cwd(),
-    "private_uploads",
-    "training",
-  );
-
-  const absolutePath = path.resolve(process.cwd(), filePath);
-
-  if (!absolutePath.startsWith(trainingDirectory)) {
-    console.error(
-      "TRAINING FILE PATH OUTSIDE ALLOWED DIRECTORY:",
-      absolutePath,
-    );
-
-    return;
-  }
-
   try {
-    await fs.promises.unlink(absolutePath);
+    await deleteTrainingFileReference(filePath);
   } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.error("DELETE TRAINING PHYSICAL FILE ERROR:", error);
-    }
+    console.error("DELETE TRAINING STORED FILE ERROR:", error);
   }
 };
 
@@ -236,7 +245,11 @@ const deletePhysicalFile = async (filePath) => {
 // SERIALIZERS
 // ======================================================
 
-const serializeCategory = (category, counts = {}) => ({
+const serializeCategory = (
+  category,
+
+  counts = {},
+) => ({
   categoryId: category.categoryId,
 
   name: category.name,
@@ -258,7 +271,13 @@ const serializeCategory = (category, counts = {}) => ({
   updatedAt: category.updatedAt,
 });
 
-const serializeTopic = (topic, category, filesCount = 0) => ({
+const serializeTopic = (
+  topic,
+
+  category,
+
+  filesCount = 0,
+) => ({
   topicId: topic.topicId,
 
   categoryId: topic.categoryId,
@@ -322,11 +341,15 @@ const getCategoryCounts = async (categoryIds) => {
   const counts = new Map();
 
   categoryIds.forEach((categoryId) => {
-    counts.set(categoryId, {
-      topicsCount: 0,
+    counts.set(
+      categoryId,
 
-      filesCount: 0,
-    });
+      {
+        topicsCount: 0,
+
+        filesCount: 0,
+      },
+    );
   });
 
   if (categoryIds.length === 0) {
@@ -344,7 +367,11 @@ const getCategoryCounts = async (categoryIds) => {
   const topicCategoryMap = new Map();
 
   topics.forEach((topic) => {
-    topicCategoryMap.set(topic.topicId, topic.categoryId);
+    topicCategoryMap.set(
+      topic.topicId,
+
+      topic.categoryId,
+    );
 
     const current = counts.get(topic.categoryId);
 
@@ -397,7 +424,7 @@ const getCategoryCounts = async (categoryIds) => {
 };
 
 // ======================================================
-// CATEGORY LIST
+// GET CATEGORIES
 //
 // GET /api/admin/training/categories
 // ======================================================
@@ -580,7 +607,11 @@ exports.createTrainingCategory = async (req, res) => {
       });
     }
 
-    const categoryId = await nextTrainingId("trainingCategoryId", "TC");
+    const categoryId = await nextTrainingId(
+      "trainingCategoryId",
+
+      "TC",
+    );
 
     const slug = await generateCategorySlug(name);
 
@@ -726,7 +757,6 @@ exports.updateTrainingCategory = async (req, res) => {
 //
 // DELETE /api/admin/training/categories/:categoryId
 //
-// Cascades:
 // Category -> Topics -> Files
 // ======================================================
 
@@ -761,7 +791,7 @@ exports.deleteTrainingCategory = async (req, res) => {
       : [];
 
     for (const file of files) {
-      await deletePhysicalFile(file.filePath);
+      await deleteStoredTrainingFile(file.filePath);
     }
 
     if (topicIds.length) {
@@ -801,8 +831,7 @@ exports.deleteTrainingCategory = async (req, res) => {
 // ======================================================
 // GET TOPICS
 //
-// GET
-// /api/admin/training/categories/:categoryId/topics
+// GET /api/admin/training/categories/:categoryId/topics
 // ======================================================
 
 exports.getTrainingTopics = async (req, res) => {
@@ -979,8 +1008,7 @@ exports.getTrainingTopics = async (req, res) => {
 // ======================================================
 // CREATE TOPIC
 //
-// POST
-// /api/admin/training/categories/:categoryId/topics
+// POST /api/admin/training/categories/:categoryId/topics
 // ======================================================
 
 exports.createTrainingTopic = async (req, res) => {
@@ -1026,7 +1054,11 @@ exports.createTrainingTopic = async (req, res) => {
       ? req.body.status
       : "active";
 
-    const topicId = await nextTrainingId("trainingTopicId", "TT");
+    const topicId = await nextTrainingId(
+      "trainingTopicId",
+
+      "TT",
+    );
 
     const slug = await generateTopicSlug(
       category.categoryId,
@@ -1254,7 +1286,6 @@ exports.updateTrainingTopic = async (req, res) => {
 //
 // DELETE /api/admin/training/topics/:topicId
 //
-// Cascades:
 // Topic -> Files
 // ======================================================
 
@@ -1277,7 +1308,7 @@ exports.deleteTrainingTopic = async (req, res) => {
     });
 
     for (const file of files) {
-      await deletePhysicalFile(file.filePath);
+      await deleteStoredTrainingFile(file.filePath);
     }
 
     await TrainingFile.deleteMany({
@@ -1311,23 +1342,18 @@ exports.deleteTrainingTopic = async (req, res) => {
 // ======================================================
 // UPLOAD FILE
 //
-// POST
-// /api/admin/training/topics/:topicId/files
+// POST /api/admin/training/topics/:topicId/files
 // ======================================================
 
 exports.uploadTrainingFile = async (req, res) => {
+  let uploadedReference = null;
+
   try {
     const topic = await TrainingTopic.findOne({
       topicId: req.params.topicId,
     });
 
     if (!topic) {
-      if (req.file) {
-        await deletePhysicalFile(
-          path.relative(process.cwd(), req.file.path).replace(/\\/g, "/"),
-        );
-      }
-
       return res.status(404).json({
         success: false,
 
@@ -1348,10 +1374,6 @@ exports.uploadTrainingFile = async (req, res) => {
     ).trim();
 
     if (!fileTitle) {
-      await deletePhysicalFile(
-        path.relative(process.cwd(), req.file.path).replace(/\\/g, "/"),
-      );
-
       return res.status(400).json({
         success: false,
 
@@ -1362,10 +1384,6 @@ exports.uploadTrainingFile = async (req, res) => {
     const sortOrder = Number(req.body.sortOrder ?? req.body.sort_order ?? 0);
 
     if (!Number.isFinite(sortOrder) || sortOrder < 0) {
-      await deletePhysicalFile(
-        path.relative(process.cwd(), req.file.path).replace(/\\/g, "/"),
-      );
-
       return res.status(400).json({
         success: false,
 
@@ -1377,52 +1395,83 @@ exports.uploadTrainingFile = async (req, res) => {
       ? req.body.status
       : "active";
 
-    const fileId = await nextTrainingId("trainingFileId", "TF");
+    const fileId = await nextTrainingId(
+      "trainingFileId",
 
-    const relativePath = path
-      .relative(process.cwd(), req.file.path)
-      .replace(/\\/g, "/");
+      "TF",
+    );
 
-    try {
-      const trainingFile = await TrainingFile.create({
-        fileId,
+    // ==================================================
+    // UPLOAD TO SUPABASE
+    //
+    // training/
+    //   TC-XXXXXX/
+    //     TT-XXXXXX/
+    //       uuid-file.pdf
+    // ==================================================
 
-        topicId: topic.topicId,
+    const uploaded = await uploadMulterFile({
+      file: req.file,
 
-        fileTitle,
+      folder: `training/${topic.categoryId}/${topic.topicId}`,
+    });
 
-        originalFileName: req.file.originalname,
+    uploadedReference = createStorageReference(uploaded.key);
 
-        storedFileName: req.file.filename,
+    const storedFileName =
+      uploaded.key.split("/").filter(Boolean).pop() || uploaded.originalName;
 
-        filePath: relativePath,
+    const trainingFile = await TrainingFile.create({
+      fileId,
 
-        fileType: getFileType(req.file.mimetype),
+      topicId: topic.topicId,
 
-        mimeType: req.file.mimetype,
+      fileTitle,
 
-        fileSize: req.file.size,
+      originalFileName: uploaded.originalName,
 
-        sortOrder,
+      storedFileName,
 
-        status,
+      filePath: uploadedReference,
 
-        uploadedByAdminId: req.admin?.adminId || null,
-      });
+      fileType: getFileType(uploaded.mimeType),
 
-      return res.status(201).json({
-        success: true,
+      mimeType: uploaded.mimeType,
 
-        message: "Training file uploaded successfully.",
+      fileSize: uploaded.size,
 
-        data: serializeFile(trainingFile),
-      });
-    } catch (error) {
-      await deletePhysicalFile(relativePath);
+      sortOrder,
 
-      throw error;
-    }
+      status,
+
+      uploadedByAdminId: req.admin?.adminId || null,
+    });
+
+    // Database save succeeded.
+    // Do not clean up file in catch.
+
+    uploadedReference = null;
+
+    return res.status(201).json({
+      success: true,
+
+      message: "Training file uploaded successfully.",
+
+      data: serializeFile(trainingFile),
+    });
   } catch (error) {
+    // ==================================================
+    // CLEAN UP SUPABASE FILE IF DATABASE SAVE FAILED
+    // ==================================================
+
+    if (uploadedReference) {
+      try {
+        await deleteTrainingFileReference(uploadedReference);
+      } catch (cleanupError) {
+        console.error("TRAINING FILE UPLOAD CLEANUP ERROR:", cleanupError);
+      }
+    }
+
     console.error("UPLOAD TRAINING FILE ERROR:", error);
 
     return res.status(500).json({
@@ -1453,52 +1502,36 @@ exports.viewTrainingFile = async (req, res) => {
       });
     }
 
-    const trainingDirectory = path.resolve(
-      process.cwd(),
-      "private_uploads",
-      "training",
-    );
+    await sendTrainingFile({
+      res,
 
-    const absolutePath = path.resolve(process.cwd(), file.filePath);
+      filePath: file.filePath,
 
-    if (!absolutePath.startsWith(trainingDirectory)) {
-      return res.status(403).json({
-        success: false,
+      mimeType: file.mimeType,
 
-        message: "Invalid training file path.",
-      });
-    }
+      originalFileName: file.originalFileName,
+    });
 
-    try {
-      await fs.promises.access(absolutePath);
-    } catch {
-      return res.status(404).json({
-        success: false,
-
-        message: "Training file is missing from storage.",
-      });
-    }
-
-    res.setHeader(
-      "Content-Type",
-
-      file.mimeType || "application/octet-stream",
-    );
-
-    res.setHeader(
-      "Content-Disposition",
-
-      `inline; filename*=UTF-8''${encodeURIComponent(file.originalFileName)}`,
-    );
-
-    return res.sendFile(absolutePath);
+    return undefined;
   } catch (error) {
     console.error("VIEW TRAINING FILE ERROR:", error);
 
-    return res.status(500).json({
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
       success: false,
 
-      message: "Failed to open training file.",
+      message:
+        statusCode === 404
+          ? "Training file is missing from storage."
+          : statusCode === 403
+            ? "Invalid training file path."
+            : "Failed to open training file.",
     });
   }
 };
@@ -1525,7 +1558,7 @@ exports.deleteTrainingFile = async (req, res) => {
 
     const responseData = serializeFile(file);
 
-    await deletePhysicalFile(file.filePath);
+    await deleteStoredTrainingFile(file.filePath);
 
     await file.deleteOne();
 

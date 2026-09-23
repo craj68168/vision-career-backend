@@ -1,10 +1,13 @@
 const crypto = require("crypto");
+
 const {
   DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
 } = require("@aws-sdk/client-s3");
+
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+
 const storageClient = require("../config/storage");
 
 // ======================================================
@@ -34,7 +37,9 @@ const sanitizeFileName = (fileName) => {
 
 const createStorageKey = ({ folder, fileName }) => {
   const id = crypto.randomUUID();
+
   const safeName = sanitizeFileName(fileName);
+
   return `${folder}/${id}-${safeName}`;
 };
 
@@ -63,16 +68,22 @@ const uploadBuffer = async ({ buffer, fileName, mimeType, folder }) => {
   await storageClient.send(
     new PutObjectCommand({
       Bucket: bucketName,
+
       Key: key,
+
       Body: buffer,
+
       ContentType: mimeType || "application/octet-stream",
     }),
   );
 
   return {
     key,
+
     originalName: fileName,
+
     mimeType: mimeType || "application/octet-stream",
+
     size: buffer.length,
   };
 };
@@ -92,8 +103,11 @@ const uploadMulterFile = async ({ file, folder }) => {
 
   return uploadBuffer({
     buffer: file.buffer,
+
     fileName: file.originalname,
+
     mimeType: file.mimetype,
+
     folder,
   });
 };
@@ -110,25 +124,49 @@ const deleteFile = async (key) => {
   await storageClient.send(
     new DeleteObjectCommand({
       Bucket: bucketName,
+
       Key: key,
     }),
   );
 };
 
 // ======================================================
-// CREATE PRIVATE SIGNED URL
+// GET PRIVATE FILE OBJECT
 //
-// Default expiry:
-// 5 minutes
+// Used when backend needs to proxy/stream private file
+// for authenticated Admin / Staff.
 // ======================================================
 
-const getPrivateFileUrl = async ({ key, expiresIn = 300 }) => {
+const getPrivateFileObject = async (key) => {
+  if (!key) {
+    throw new Error("Storage key is required");
+  }
+
+  return storageClient.send(
+    new GetObjectCommand({
+      Bucket: bucketName,
+
+      Key: key,
+    }),
+  );
+};
+
+// ======================================================
+// GET PRIVATE SIGNED URL
+// ======================================================
+
+const getPrivateFileUrl = async ({
+  key,
+
+  expiresIn = 300,
+}) => {
   if (!key) {
     throw new Error("Storage key is required");
   }
 
   const command = new GetObjectCommand({
     Bucket: bucketName,
+
     Key: key,
   });
 
@@ -137,9 +175,18 @@ const getPrivateFileUrl = async ({ key, expiresIn = 300 }) => {
   });
 };
 
+// ======================================================
+// EXPORTS
+// ======================================================
+
 module.exports = {
   uploadBuffer,
+
   uploadMulterFile,
+
   deleteFile,
+
+  getPrivateFileObject,
+
   getPrivateFileUrl,
 };

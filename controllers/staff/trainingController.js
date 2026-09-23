@@ -1,11 +1,10 @@
-const fs = require("fs");
-const path = require("path");
-
 const TrainingCategory = require("../../models/training/trainingCategorySchema");
 
 const TrainingTopic = require("../../models/training/trainingTopicSchema");
 
 const TrainingFile = require("../../models/training/trainingFileSchema");
+
+const { sendTrainingFile } = require("../../utils/trainingStorage");
 
 // ======================================================
 // ESCAPE REGEX
@@ -20,10 +19,19 @@ const escapeRegex = (value) => {
 // ======================================================
 
 const getPagination = (req) => {
-  const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+  const page = Math.max(
+    Number.parseInt(req.query.page, 10) || 1,
+
+    1,
+  );
 
   const limit = Math.min(
-    Math.max(Number.parseInt(req.query.limit, 10) || 10, 1),
+    Math.max(
+      Number.parseInt(req.query.limit, 10) || 10,
+
+      1,
+    ),
+
     100,
   );
 
@@ -40,7 +48,11 @@ const getPagination = (req) => {
 // SERIALIZERS
 // ======================================================
 
-const serializeCategory = (category, counts = {}) => ({
+const serializeCategory = (
+  category,
+
+  counts = {},
+) => ({
   categoryId: category.categoryId,
 
   name: category.name,
@@ -60,7 +72,13 @@ const serializeCategory = (category, counts = {}) => ({
   updatedAt: category.updatedAt,
 });
 
-const serializeTopic = (topic, category, filesCount = 0) => ({
+const serializeTopic = (
+  topic,
+
+  category,
+
+  filesCount = 0,
+) => ({
   topicId: topic.topicId,
 
   categoryId: topic.categoryId,
@@ -120,11 +138,15 @@ const getActiveCategoryCounts = async (categoryIds) => {
   const counts = new Map();
 
   categoryIds.forEach((categoryId) => {
-    counts.set(categoryId, {
-      topicsCount: 0,
+    counts.set(
+      categoryId,
 
-      filesCount: 0,
-    });
+      {
+        topicsCount: 0,
+
+        filesCount: 0,
+      },
+    );
   });
 
   if (categoryIds.length === 0) {
@@ -144,7 +166,11 @@ const getActiveCategoryCounts = async (categoryIds) => {
   const topicCategoryMap = new Map();
 
   topics.forEach((topic) => {
-    topicCategoryMap.set(topic.topicId, topic.categoryId);
+    topicCategoryMap.set(
+      topic.topicId,
+
+      topic.categoryId,
+    );
 
     const current = counts.get(topic.categoryId);
 
@@ -219,6 +245,7 @@ exports.getTrainingCategories = async (req, res) => {
         {
           name: {
             $regex: escapeRegex(search),
+
             $options: "i",
           },
         },
@@ -226,6 +253,7 @@ exports.getTrainingCategories = async (req, res) => {
         {
           description: {
             $regex: escapeRegex(search),
+
             $options: "i",
           },
         },
@@ -258,7 +286,11 @@ exports.getTrainingCategories = async (req, res) => {
       ),
     );
 
-    const totalPages = Math.max(Math.ceil(total / limit), 1);
+    const totalPages = Math.max(
+      Math.ceil(total / limit),
+
+      1,
+    );
 
     return res.status(200).json({
       success: true,
@@ -295,8 +327,7 @@ exports.getTrainingCategories = async (req, res) => {
 // ======================================================
 // GET TOPICS
 //
-// GET
-// /api/staff/training/categories/:categoryId/topics
+// GET /api/staff/training/categories/:categoryId/topics
 // ======================================================
 
 exports.getTrainingTopics = async (req, res) => {
@@ -328,6 +359,7 @@ exports.getTrainingTopics = async (req, res) => {
         {
           title: {
             $regex: escapeRegex(search),
+
             $options: "i",
           },
         },
@@ -335,6 +367,7 @@ exports.getTrainingTopics = async (req, res) => {
         {
           description: {
             $regex: escapeRegex(search),
+
             $options: "i",
           },
         },
@@ -513,7 +546,7 @@ exports.viewTrainingFile = async (req, res) => {
     }
 
     // ==================================================
-    // CONFIRM TOPIC IS ACTIVE
+    // CONFIRM TOPIC ACTIVE
     // ==================================================
 
     const topic = await TrainingTopic.findOne({
@@ -531,7 +564,7 @@ exports.viewTrainingFile = async (req, res) => {
     }
 
     // ==================================================
-    // CONFIRM CATEGORY IS ACTIVE
+    // CONFIRM CATEGORY ACTIVE
     // ==================================================
 
     const category = await TrainingCategory.findOne({
@@ -549,66 +582,45 @@ exports.viewTrainingFile = async (req, res) => {
     }
 
     // ==================================================
-    // FILE PATH
+    // SEND PRIVATE FILE
+    //
+    // Supports:
+    //
+    // Supabase storage://
+    //
+    // Legacy private_uploads/training
     // ==================================================
 
-    const trainingDirectory = path.resolve(
-      process.cwd(),
+    await sendTrainingFile({
+      res,
 
-      "private_uploads",
+      filePath: file.filePath,
 
-      "training",
-    );
+      mimeType: file.mimeType,
 
-    const absolutePath = path.resolve(
-      process.cwd(),
+      originalFileName: file.originalFileName,
+    });
 
-      file.filePath,
-    );
-
-    const allowedPrefix = `${trainingDirectory}${path.sep}`;
-
-    if (
-      absolutePath !== trainingDirectory &&
-      !absolutePath.startsWith(allowedPrefix)
-    ) {
-      return res.status(403).json({
-        success: false,
-
-        message: "Invalid training file path.",
-      });
-    }
-
-    try {
-      await fs.promises.access(absolutePath);
-    } catch {
-      return res.status(404).json({
-        success: false,
-
-        message: "Training file is missing from storage.",
-      });
-    }
-
-    res.setHeader(
-      "Content-Type",
-
-      file.mimeType || "application/octet-stream",
-    );
-
-    res.setHeader(
-      "Content-Disposition",
-
-      `inline; filename*=UTF-8''${encodeURIComponent(file.originalFileName)}`,
-    );
-
-    return res.sendFile(absolutePath);
+    return undefined;
   } catch (error) {
     console.error("VIEW STAFF TRAINING FILE ERROR:", error);
 
-    return res.status(500).json({
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
       success: false,
 
-      message: "Failed to open training file.",
+      message:
+        statusCode === 404
+          ? "Training file is missing from storage."
+          : statusCode === 403
+            ? "Invalid training file path."
+            : "Failed to open training file.",
     });
   }
 };
