@@ -21,6 +21,8 @@ const recruitRoutes = require("./routes/providers/recruitRoutes");
 
 const providerApplicationRoutes = require("./routes/providers/applicationRoutes");
 
+const providerInterviewRoutes = require("./routes/providers/interviewRoutes");
+
 // ======================================================
 // SEEKER ROUTES
 // ======================================================
@@ -37,6 +39,10 @@ const seekerVacancyRoutes = require("./routes/seekers/vacancyRoutes");
 
 const seekerDashboardRoutes = require("./routes/seekers/dashboardRoutes");
 
+const seekerInterviewRoutes = require("./routes/seekers/interviewRoutes");
+
+const seekerNotificationRoutes = require("./routes/seekers/notificationRoutes");
+
 // ======================================================
 // ADMIN ROUTES
 // ======================================================
@@ -46,6 +52,8 @@ const adminAuthRoutes = require("./routes/admin/authRoutes");
 const adminDashboardRoutes = require("./routes/admin/dashboardRoutes");
 
 const adminApplicationRoutes = require("./routes/admin/applicationRoutes");
+
+const adminInterviewRoutes = require("./routes/admin/interviewRoutes");
 
 const adminVacancyRoutes = require("./routes/admin/vacancyRoutes");
 
@@ -70,6 +78,7 @@ const providerPlacementCandidateRoutes = require("./routes/providers/placementCa
 // ======================================================
 
 const Vacancy = require("./models/providers/vacancySchema");
+
 const Profile = require("./models/providers/profileSchema");
 
 // ======================================================
@@ -89,6 +98,8 @@ const staffAuthRoutes = require("./routes/staff/authRoutes");
 const staffDashboardRoutes = require("./routes/staff/dashboardRoutes");
 
 const staffApplicationRoutes = require("./routes/staff/applicationRoutes");
+
+const staffInterviewRoutes = require("./routes/staff/interviewRoutes");
 
 const staffVacancyRoutes = require("./routes/staff/vacancyRoutes");
 
@@ -158,6 +169,7 @@ app.get("/", (req, res) => {
 app.use("/api/admin/auth", adminAuthRoutes);
 
 app.use("/api/admin/dashboard", adminDashboardRoutes);
+
 // ======================================================
 // SEEKER AUTH / RESUME
 // ======================================================
@@ -193,6 +205,12 @@ app.use("/api/providers/vacancies", vacancyRoutes);
 app.use("/api/providers/applications", providerApplicationRoutes);
 
 // ======================================================
+// PROVIDER INTERVIEWS
+// ======================================================
+
+app.use("/api/providers/interviews", providerInterviewRoutes);
+
+// ======================================================
 // PROVIDER RECRUIT / PLACEMENT REQUESTS
 // ======================================================
 
@@ -209,6 +227,18 @@ app.use("/api/seekers/profile", seekerProfileRoutes);
 // ======================================================
 
 app.use("/api/seekers/applications", seekerApplicationRoutes);
+
+// ======================================================
+// SEEKER INTERVIEWS
+// ======================================================
+
+app.use("/api/seekers/interviews", seekerInterviewRoutes);
+
+// ======================================================
+// SEEKER NOTIFICATIONS
+// ======================================================
+
+app.use("/api/seekers/notifications", seekerNotificationRoutes);
 
 // ======================================================
 // SEEKER VACANCIES
@@ -229,6 +259,12 @@ app.use("/api/seekers/dashboard", seekerDashboardRoutes);
 app.use("/api/admin/applications", adminApplicationRoutes);
 
 // ======================================================
+// ADMIN INTERVIEWS
+// ======================================================
+
+app.use("/api/admin/interviews", adminInterviewRoutes);
+
+// ======================================================
 // ADMIN VACANCIES
 // ======================================================
 
@@ -247,37 +283,95 @@ app.use("/api/admin/providers", adminProviderRoutes);
 app.use("/api/admin/seekers", adminSeekerRoutes);
 
 // ======================================================
-// ADMIN PLACEMENT-REQUEST
+// ADMIN PLACEMENT REQUESTS
 // ======================================================
 
 app.use("/api/admin/placement-requests", adminPlacementRequestRoutes);
 
+// ======================================================
+// ADMIN PLACEMENT CANDIDATES
+// ======================================================
+
 app.use("/api/admin/placement-candidates", adminPlacementCandidateRoutes);
+
+// ======================================================
+// PROVIDER PLACEMENT CANDIDATES
+// ======================================================
 
 app.use(
   "/api/providers/placement-candidates",
   providerPlacementCandidateRoutes,
 );
 
+// ======================================================
+// ADMIN PLACEMENT BILLING
+// ======================================================
+
 app.use("/api/admin/placement-billings", adminPlacementBillingRoutes);
+
+// ======================================================
+// ADMIN STAFF
+// ======================================================
 
 app.use("/api/admin/staff", adminStaffRoutes);
 
+// ======================================================
+// STAFF AUTH
+// ======================================================
+
 app.use("/api/staff/auth", staffAuthRoutes);
+
+// ======================================================
+// STAFF DASHBOARD
+// ======================================================
 
 app.use("/api/staff/dashboard", staffDashboardRoutes);
 
+// ======================================================
+// STAFF APPLICATIONS
+// ======================================================
+
 app.use("/api/staff/applications", staffApplicationRoutes);
+
+// ======================================================
+// STAFF INTERVIEWS
+// ======================================================
+
+app.use("/api/staff/interviews", staffInterviewRoutes);
+
+// ======================================================
+// STAFF VACANCIES
+// ======================================================
 
 app.use("/api/staff/vacancies", staffVacancyRoutes);
 
+// ======================================================
+// STAFF SEEKERS
+// ======================================================
+
 app.use("/api/staff/seekers", staffSeekerRoutes);
+
+// ======================================================
+// STAFF PROVIDERS
+// ======================================================
 
 app.use("/api/staff/providers", staffProviderRoutes);
 
+// ======================================================
+// STAFF PLACEMENT REQUESTS
+// ======================================================
+
 app.use("/api/staff/placement-requests", staffPlacementRequestRoutes);
 
+// ======================================================
+// STAFF PLACEMENT CANDIDATES
+// ======================================================
+
 app.use("/api/staff/placement-candidates", staffPlacementCandidateRoutes);
+
+// ======================================================
+// STAFF PLACEMENT BILLING
+// ======================================================
 
 app.use("/api/staff/placement-billings", staffPlacementBillingRoutes);
 
@@ -329,17 +423,17 @@ const startServer = async () => {
       throw new Error("MONGO_URI missing in .env");
     }
 
-    // ======================================================
+    // ==================================================
     // CONNECT DATABASE
-    // ======================================================
+    // ==================================================
 
     await mongoose.connect(process.env.MONGO_URI);
 
     console.log("✅ MongoDB connected");
 
-    // ======================================================
+    // ==================================================
     // LEGACY VACANCY INDEX CLEANUP
-    // ======================================================
+    // ==================================================
 
     const vacancyIndexes = await Vacancy.collection.indexes();
 
@@ -358,17 +452,17 @@ const startServer = async () => {
       console.log("✅ Removed old vacancy_id_1 index");
     }
 
-    // ======================================================
+    // ==================================================
     // CURRENT VACANCY INDEXES
-    // ======================================================
+    // ==================================================
 
     await Vacancy.init();
 
     console.log("✅ Vacancy indexes ready");
 
-    // ======================================================
+    // ==================================================
     // LEGACY PROFILE INDEX CLEANUP
-    // ======================================================
+    // ==================================================
     //
     // OLD PROFILE MODEL:
     // user
@@ -384,7 +478,7 @@ const startServer = async () => {
     // E11000 duplicate key
     // user: null
     //
-    // ======================================================
+    // ==================================================
 
     const profileIndexes = await Profile.collection.indexes();
 
@@ -403,18 +497,19 @@ const startServer = async () => {
       console.log("✅ Removed old profile user_1 index");
     }
 
-    // ======================================================
+    // ==================================================
     // CURRENT PROFILE INDEXES
-    // ======================================================
+    // ==================================================
 
     await Profile.init();
+
     await bootstrapAdmin();
 
     console.log("✅ Profile indexes ready");
 
-    // ======================================================
+    // ==================================================
     // START SERVER
-    // ======================================================
+    // ==================================================
 
     app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);

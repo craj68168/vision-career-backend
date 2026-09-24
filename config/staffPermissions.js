@@ -3,36 +3,76 @@
 // ======================================================
 
 const STAFF_PERMISSIONS = [
-  // Dashboard
+  // ==================================================
+  // DASHBOARD
+  // ==================================================
+
   "dashboard:view",
 
-  // Vacancies
+  // ==================================================
+  // VACANCIES
+  // ==================================================
+
   "vacancies:view",
+
   "vacancies:review",
 
-  // Applications
+  // ==================================================
+  // APPLICATIONS
+  // ==================================================
+
   "applications:view",
+
   "applications:review",
 
-  // Providers / Clients
+  // ==================================================
+  // INTERVIEWS
+  // ==================================================
+
+  "interviews:view",
+
+  "interviews:manage",
+
+  // ==================================================
+  // PROVIDERS / CLIENTS
+  // ==================================================
+
   "providers:view",
+
   "providers:manage",
 
-  // Job Seekers
+  // ==================================================
+  // JOB SEEKERS
+  // ==================================================
+
   "seekers:view",
+
   "seekers:manage",
 
-  // Placement Requests
+  // ==================================================
+  // PLACEMENT REQUESTS
+  // ==================================================
+
   "placement_requests:view",
+
   "placement_requests:review",
+
   "placement_requests:manage_candidates",
 
-  // Placement Billing
+  // ==================================================
+  // PLACEMENT BILLING
+  // ==================================================
+
   "billing:view",
+
   "billing:manage",
 
-  // Staff Training
+  // ==================================================
+  // STAFF TRAINING
+  // ==================================================
+
   "training:view",
+
   "training:manage",
 ];
 
