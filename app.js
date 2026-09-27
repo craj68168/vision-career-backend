@@ -1,6 +1,9 @@
 const express = require("express");
+
 const cors = require("cors");
+
 const mongoose = require("mongoose");
+
 const path = require("path");
 
 require("dotenv").config();
@@ -22,6 +25,10 @@ const recruitRoutes = require("./routes/providers/recruitRoutes");
 const providerApplicationRoutes = require("./routes/providers/applicationRoutes");
 
 const providerInterviewRoutes = require("./routes/providers/interviewRoutes");
+
+const providerPlacementCandidateRoutes = require("./routes/providers/placementCandidateRoutes");
+
+const providerPlacementBillingRoutes = require("./routes/providers/placementBillingRoutes");
 
 // ======================================================
 // SEEKER ROUTES
@@ -63,35 +70,17 @@ const adminSeekerRoutes = require("./routes/admin/seekerRoutes");
 
 const adminPlacementRequestRoutes = require("./routes/admin/placementRequestRoutes");
 
-const adminPlacementBillingRoutes = require("./routes/admin/placementBillingRoutes");
-
-// ======================================================
-// PLACEMENT CANDIDATE ROUTES
-// ======================================================
-
 const adminPlacementCandidateRoutes = require("./routes/admin/placementCandidateRoutes");
 
-const providerPlacementCandidateRoutes = require("./routes/providers/placementCandidateRoutes");
+const adminPlacementBillingRoutes = require("./routes/admin/placementBillingRoutes");
 
-// ======================================================
-// STARTUP MODELS
-// ======================================================
+const adminStaffRoutes = require("./routes/admin/staffRoutes");
 
-const Vacancy = require("./models/providers/vacancySchema");
-
-const Profile = require("./models/providers/profileSchema");
-
-// ======================================================
-// STARTUP UTILITIES
-// ======================================================
-
-const bootstrapAdmin = require("./utils/bootstrapAdmin");
+const adminTrainingRoutes = require("./routes/admin/trainingRoutes");
 
 // ======================================================
 // STAFF ROUTES
 // ======================================================
-
-const adminStaffRoutes = require("./routes/admin/staffRoutes");
 
 const staffAuthRoutes = require("./routes/staff/authRoutes");
 
@@ -113,11 +102,23 @@ const staffPlacementCandidateRoutes = require("./routes/staff/placementCandidate
 
 const staffPlacementBillingRoutes = require("./routes/staff/placementBillingRoutes");
 
-const adminTrainingRoutes = require("./routes/admin/trainingRoutes");
-
 const staffTrainingRoutes = require("./routes/staff/trainingRoutes");
 
-const providerPlacementBillingRoutes = require("./routes/providers/placementBillingRoutes");
+// ======================================================
+// STARTUP MODELS
+// ======================================================
+
+const Vacancy = require("./models/providers/vacancySchema");
+
+const Profile = require("./models/providers/profileSchema");
+
+const Interview = require("./models/interviews/interviewSchema");
+
+// ======================================================
+// STARTUP UTILITIES
+// ======================================================
+
+const bootstrapAdmin = require("./utils/bootstrapAdmin");
 
 // ======================================================
 // APP
@@ -134,6 +135,7 @@ const PORT = process.env.PORT || 8000;
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
+
     credentials: true,
   }),
 );
@@ -219,6 +221,21 @@ app.use("/api/providers/interviews", providerInterviewRoutes);
 app.use("/api/providers/recruits", recruitRoutes);
 
 // ======================================================
+// PROVIDER PLACEMENT CANDIDATES
+// ======================================================
+
+app.use(
+  "/api/providers/placement-candidates",
+  providerPlacementCandidateRoutes,
+);
+
+// ======================================================
+// PROVIDER PLACEMENT BILLINGS
+// ======================================================
+
+app.use("/api/providers/placement-billings", providerPlacementBillingRoutes);
+
+// ======================================================
 // SEEKER PROFILE
 // ======================================================
 
@@ -295,21 +312,6 @@ app.use("/api/admin/placement-requests", adminPlacementRequestRoutes);
 // ======================================================
 
 app.use("/api/admin/placement-candidates", adminPlacementCandidateRoutes);
-
-// ======================================================
-// PROVIDER PLACEMENT CANDIDATES
-// ======================================================
-
-app.use(
-  "/api/providers/placement-candidates",
-  providerPlacementCandidateRoutes,
-);
-
-// ======================================================
-// PROVIDER PLACEMENT BILLINGS
-// ======================================================
-
-app.use("/api/providers/placement-billings", providerPlacementBillingRoutes);
 
 // ======================================================
 // ADMIN PLACEMENT BILLING
@@ -422,6 +424,154 @@ app.use((err, req, res, next) => {
 });
 
 // ======================================================
+// INTERVIEW INDEX CHECK
+// ======================================================
+
+const isCorrectApplicationInterviewIndex = (index) => {
+  if (index.name !== "unique_application_interview") {
+    return false;
+  }
+
+  if (!index.unique) {
+    return false;
+  }
+
+  const keys = Object.keys(index.key || {});
+
+  if (keys.length !== 1 || index.key.application_id !== 1) {
+    return false;
+  }
+
+  const partial = index.partialFilterExpression || {};
+
+  return (
+    partial.source_type === "APPLICATION" &&
+    partial.application_id?.$type === "string"
+  );
+};
+
+const isCorrectPlacementInterviewIndex = (index) => {
+  if (index.name !== "unique_placement_candidate_interview") {
+    return false;
+  }
+
+  if (!index.unique) {
+    return false;
+  }
+
+  const keys = Object.keys(index.key || {});
+
+  if (keys.length !== 1 || index.key.placement_candidate_id !== 1) {
+    return false;
+  }
+
+  const partial = index.partialFilterExpression || {};
+
+  return (
+    partial.source_type === "PLACEMENT" &&
+    partial.placement_candidate_id?.$type === "string"
+  );
+};
+
+// ======================================================
+// LEGACY INTERVIEW INDEX CLEANUP
+// ======================================================
+
+const cleanupInterviewIndexes = async () => {
+  const indexes = await Interview.collection.indexes();
+
+  console.log(
+    "Current interview indexes:",
+    indexes.map((index) => ({
+      name: index.name,
+
+      key: index.key,
+
+      unique: Boolean(index.unique),
+
+      partialFilterExpression: index.partialFilterExpression || null,
+    })),
+  );
+
+  for (const index of indexes) {
+    // MongoDB primary index must never be removed.
+    if (index.name === "_id_") {
+      continue;
+    }
+
+    // Non-unique query indexes are safe.
+    if (!index.unique) {
+      continue;
+    }
+
+    // interview_id is intentionally unique.
+    const keyNames = Object.keys(index.key || {});
+
+    const isInterviewIdIndex =
+      keyNames.length === 1 && index.key.interview_id === 1;
+
+    if (isInterviewIdIndex) {
+      continue;
+    }
+
+    // Current valid application interview index.
+    if (isCorrectApplicationInterviewIndex(index)) {
+      continue;
+    }
+
+    // Current valid placement interview index.
+    if (isCorrectPlacementInterviewIndex(index)) {
+      continue;
+    }
+
+    /*
+     * Any other UNIQUE interview index is
+     * from an older schema or is incompatible
+     * with the current relationship model.
+     *
+     * Examples:
+     *
+     * seeker_id_1 unique
+     *
+     * application_id_1 unique without
+     * partialFilterExpression
+     *
+     * placement_candidate_id_1 unique without
+     * partialFilterExpression
+     */
+
+    console.log(`⚠️ Removing obsolete unique interview index: ${index.name}`);
+
+    console.log("   key:", index.key);
+
+    await Interview.collection.dropIndex(index.name);
+
+    console.log(`✅ Removed obsolete interview index: ${index.name}`);
+  }
+
+  // ==================================================
+  // CREATE CURRENT SCHEMA INDEXES
+  // ==================================================
+
+  await Interview.init();
+
+  const finalIndexes = await Interview.collection.indexes();
+
+  console.log(
+    "✅ Interview indexes ready:",
+    finalIndexes.map((index) => ({
+      name: index.name,
+
+      key: index.key,
+
+      unique: Boolean(index.unique),
+
+      partialFilterExpression: index.partialFilterExpression || null,
+    })),
+  );
+};
+
+// ======================================================
 // START SERVER
 // ======================================================
 
@@ -511,9 +661,36 @@ const startServer = async () => {
 
     await Profile.init();
 
-    await bootstrapAdmin();
-
     console.log("✅ Profile indexes ready");
+
+    // ==================================================
+    // INTERVIEW INDEX CLEANUP
+    // ==================================================
+    //
+    // Current rules:
+    //
+    // APPLICATION
+    // one interview per application_id
+    //
+    // PLACEMENT
+    // one interview per placement_candidate_id
+    //
+    // IMPORTANT:
+    //
+    // seeker_id must NOT be globally unique.
+    //
+    // The same seeker can participate in another
+    // application or another placement request.
+    //
+    // ==================================================
+
+    await cleanupInterviewIndexes();
+
+    // ==================================================
+    // BOOTSTRAP ADMIN
+    // ==================================================
+
+    await bootstrapAdmin();
 
     // ==================================================
     // START SERVER
