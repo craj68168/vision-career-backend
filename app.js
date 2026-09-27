@@ -117,6 +117,8 @@ const adminTrainingRoutes = require("./routes/admin/trainingRoutes");
 
 const staffTrainingRoutes = require("./routes/staff/trainingRoutes");
 
+const providerPlacementBillingRoutes = require("./routes/providers/placementBillingRoutes");
+
 // ======================================================
 // APP
 // ======================================================
@@ -302,6 +304,12 @@ app.use(
   "/api/providers/placement-candidates",
   providerPlacementCandidateRoutes,
 );
+
+// ======================================================
+// PROVIDER PLACEMENT BILLINGS
+// ======================================================
+
+app.use("/api/providers/placement-billings", providerPlacementBillingRoutes);
 
 // ======================================================
 // ADMIN PLACEMENT BILLING

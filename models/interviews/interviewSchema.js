@@ -1,6 +1,12 @@
 const mongoose = require("mongoose");
 
 // ======================================================
+// INTERVIEW SOURCES
+// ======================================================
+
+const INTERVIEW_SOURCES = ["APPLICATION", "PLACEMENT"];
+
+// ======================================================
 // INTERVIEW METHODS
 // ======================================================
 
@@ -37,9 +43,6 @@ const interviewSchema = new mongoose.Schema(
   {
     // ==================================================
     // CUSTOM INTERVIEW ID
-    //
-    // Example:
-    // INT-A12B34CD
     // ==================================================
 
     interview_id: {
@@ -52,15 +55,57 @@ const interviewSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // APPLICATION
+    // SOURCE
+    //
+    // APPLICATION:
+    // application_id + vacancy_id
+    //
+    // PLACEMENT:
+    // placement_candidate_id + recruit_id
+    // ==================================================
+
+    source_type: {
+      type: String,
+      required: true,
+      enum: INTERVIEW_SOURCES,
+      default: "APPLICATION",
+      immutable: true,
+      index: true,
+    },
+
+    // ==================================================
+    // APPLICATION SOURCE
     // ==================================================
 
     application_id: {
       type: String,
-      required: true,
-      unique: true,
+      default: null,
       immutable: true,
-      index: true,
+      trim: true,
+    },
+
+    vacancy_id: {
+      type: String,
+      default: null,
+      immutable: true,
+      trim: true,
+    },
+
+    // ==================================================
+    // PLACEMENT SOURCE
+    // ==================================================
+
+    placement_candidate_id: {
+      type: String,
+      default: null,
+      immutable: true,
+      trim: true,
+    },
+
+    recruit_id: {
+      type: String,
+      default: null,
+      immutable: true,
       trim: true,
     },
 
@@ -84,16 +129,8 @@ const interviewSchema = new mongoose.Schema(
       trim: true,
     },
 
-    vacancy_id: {
-      type: String,
-      required: true,
-      immutable: true,
-      index: true,
-      trim: true,
-    },
-
     // ==================================================
-    // INTERVIEW DATE
+    // DATE
     // ==================================================
 
     interview_date: {
@@ -103,9 +140,7 @@ const interviewSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // INTERVIEW TIME
-    //
-    // HH:mm
+    // TIME
     // ==================================================
 
     interview_time: {
@@ -135,7 +170,7 @@ const interviewSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // INTERVIEW METHOD
+    // METHOD
     // ==================================================
 
     interview_method: {
@@ -168,7 +203,7 @@ const interviewSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // INTERVIEW STATUS
+    // STATUS
     // ==================================================
 
     status: {
@@ -197,7 +232,7 @@ const interviewSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // LAST UPDATED BY
+    // UPDATED BY
     // ==================================================
 
     updated_by_role: {
@@ -214,7 +249,7 @@ const interviewSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // CONFIRMATION
+    // CONFIRMED
     // ==================================================
 
     confirmed_at: {
@@ -289,7 +324,81 @@ const interviewSchema = new mongoose.Schema(
 );
 
 // ======================================================
-// INDEXES
+// SOURCE VALIDATION
+// ======================================================
+
+interviewSchema.pre("validate", function () {
+  if (this.source_type === "APPLICATION") {
+    if (!this.application_id) {
+      this.invalidate(
+        "application_id",
+        "application_id is required for application interviews.",
+      );
+    }
+
+    if (!this.vacancy_id) {
+      this.invalidate(
+        "vacancy_id",
+        "vacancy_id is required for application interviews.",
+      );
+    }
+  }
+
+  if (this.source_type === "PLACEMENT") {
+    if (!this.placement_candidate_id) {
+      this.invalidate(
+        "placement_candidate_id",
+        "placement_candidate_id is required for placement interviews.",
+      );
+    }
+
+    if (!this.recruit_id) {
+      this.invalidate(
+        "recruit_id",
+        "recruit_id is required for placement interviews.",
+      );
+    }
+  }
+});
+
+// ======================================================
+// UNIQUE SOURCE INDEXES
+// ======================================================
+
+interviewSchema.index(
+  {
+    application_id: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      source_type: "APPLICATION",
+      application_id: {
+        $type: "string",
+      },
+    },
+    name: "unique_application_interview",
+  },
+);
+
+interviewSchema.index(
+  {
+    placement_candidate_id: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      source_type: "PLACEMENT",
+      placement_candidate_id: {
+        $type: "string",
+      },
+    },
+    name: "unique_placement_candidate_interview",
+  },
+);
+
+// ======================================================
+// QUERY INDEXES
 // ======================================================
 
 interviewSchema.index({
@@ -308,23 +417,16 @@ interviewSchema.index({
   interview_date: 1,
 });
 
+interviewSchema.index({
+  source_type: 1,
+  provider_id: 1,
+});
+
 // ======================================================
 // MODEL
 // ======================================================
 
 const Interview =
   mongoose.models.Interview || mongoose.model("Interview", interviewSchema);
-
-// ======================================================
-// EXPORT
-//
-// IMPORTANT:
-//
-// The controller expects:
-//
-// const Interview = require(...)
-//
-// Therefore export the model DIRECTLY.
-// ======================================================
 
 module.exports = Interview;

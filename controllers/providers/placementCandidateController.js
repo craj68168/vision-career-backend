@@ -1,7 +1,9 @@
 const PlacementCandidate = require("../../models/placements/placementCandidateSchema");
+
 const {
   ensurePlacementBilling,
 } = require("../../utils/ensurePlacementBilling");
+
 const Recruit = require("../../models/providers/recruitSchema");
 
 const {
@@ -9,17 +11,7 @@ const {
 } = require("../../utils/syncSeekerPlacementStatus");
 
 // ======================================================
-// SAFE PROVIDER SERIALIZER
-//
-// NEVER EXPOSE:
-//
-// seekerId
-// providerId
-// matchedByAdminId
-// email
-// phone
-// address
-// private documents
+// SERIALIZER
 // ======================================================
 
 const serializeProviderCandidate = (candidate) => ({
@@ -51,13 +43,21 @@ const serializeProviderCandidate = (candidate) => ({
 });
 
 // ======================================================
-// ALLOWED TRANSITIONS
+// TRANSITIONS
+//
+// IMPORTANT:
+//
+// UNDER_REVIEW -> INTERVIEW
+// is intentionally NOT here.
+//
+// Interview stage is entered only after successful
+// interview scheduling.
 // ======================================================
 
 const ALLOWED_TRANSITIONS = {
   MATCHED: ["UNDER_REVIEW", "REJECTED"],
 
-  UNDER_REVIEW: ["INTERVIEW", "REJECTED"],
+  UNDER_REVIEW: ["REJECTED"],
 
   INTERVIEW: ["SELECTED", "REJECTED"],
 
@@ -69,12 +69,7 @@ const ALLOWED_TRANSITIONS = {
 };
 
 // ======================================================
-// GET PROVIDER MATCHED CANDIDATES
-//
-// GET /api/providers/placement-candidates
-//
-// Optional:
-// ?recruitId=R-XXXXXX
+// GET ALL
 // ======================================================
 
 exports.getPlacementCandidates = async (req, res) => {
@@ -148,10 +143,7 @@ exports.getPlacementCandidateById = async (req, res) => {
 };
 
 // ======================================================
-// UPDATE PROVIDER CANDIDATE STATUS
-//
-// PATCH
-// /api/providers/placement-candidates/:placementCandidateId/status
+// UPDATE STATUS
 // ======================================================
 
 exports.updatePlacementCandidateStatus = async (req, res) => {
@@ -159,16 +151,18 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
     const { status, rejectionReason } = req.body;
 
     // ==================================================
-    // ALLOWED STATUS VALUES
+    // INTERVIEW MUST BE SCHEDULED
     // ==================================================
 
-    const allowedStatuses = [
-      "UNDER_REVIEW",
-      "INTERVIEW",
-      "SELECTED",
-      "PLACED",
-      "REJECTED",
-    ];
+    if (status === "INTERVIEW") {
+      return res.status(400).json({
+        success: false,
+
+        message: "Schedule the interview using the interview scheduling form.",
+      });
+    }
+
+    const allowedStatuses = ["UNDER_REVIEW", "SELECTED", "PLACED", "REJECTED"];
 
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
@@ -177,10 +171,6 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
         message: "Invalid candidate status.",
       });
     }
-
-    // ==================================================
-    // FIND CANDIDATE OWNED BY PROVIDER
-    // ==================================================
 
     const candidate = await PlacementCandidate.findOne({
       placementCandidateId: req.params.placementCandidateId,
@@ -196,15 +186,7 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       });
     }
 
-    // Keep seeker ID internally.
-    //
-    // It is never returned by provider serializer.
-
     const seekerId = candidate.seekerId;
-
-    // ==================================================
-    // CONFIRM PLACEMENT REQUEST OWNERSHIP
-    // ==================================================
 
     const recruit = await Recruit.findOne({
       recruitId: candidate.recruitId,
@@ -220,10 +202,6 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // VALID TRANSITION
-    // ==================================================
-
     const nextStatuses = ALLOWED_TRANSITIONS[candidate.status] || [];
 
     if (!nextStatuses.includes(status)) {
@@ -233,10 +211,6 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
         message: `Cannot change candidate status from ${candidate.status} to ${status}.`,
       });
     }
-
-    // ==================================================
-    // REJECTION
-    // ==================================================
 
     if (status === "REJECTED") {
       const normalizedReason = String(rejectionReason || "").trim();
@@ -266,16 +240,8 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       candidate.rejectedAt = null;
     }
 
-    // ==================================================
-    // STATUS TIMESTAMPS
-    // ==================================================
-
     if (status === "UNDER_REVIEW") {
       candidate.providerReviewedAt = new Date();
-    }
-
-    if (status === "INTERVIEW") {
-      candidate.interviewAt = new Date();
     }
 
     if (status === "SELECTED") {
@@ -286,44 +252,21 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       candidate.placedAt = new Date();
     }
 
-    // ==================================================
-    // UPDATE CANDIDATE
-    // ==================================================
-
     candidate.status = status;
 
     await candidate.save();
 
-    // ======================================================
-    // CREATE BILLING WHEN CANDIDATE BECOMES PLACED
-    // ======================================================
+    // ==================================================
+    // BILLING
+    // ==================================================
 
     if (status === "PLACED") {
       try {
         await ensurePlacementBilling(candidate);
       } catch (billingError) {
         console.error("AUTO PLACEMENT BILLING ERROR:", billingError);
-
-        // Do not undo the successful placement.
-        // Admin billing GET will automatically backfill
-        // missing billing records.
       }
     }
-
-    // ==================================================
-    // SYNCHRONIZE SEEKER
-    //
-    // IMPORTANT:
-    //
-    // The helper looks at ALL placement records.
-    //
-    // Example:
-    //
-    // Request A = PLACED
-    // Request B = REJECTED
-    //
-    // seeker remains "placed".
-    // ==================================================
 
     const seekerPlacement = await syncSeekerPlacementStatus(seekerId);
 

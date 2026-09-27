@@ -1,15 +1,23 @@
 const crypto = require("crypto");
 
 const Interview = require("../../models/interviews/interviewSchema");
+
 const Application = require("../../models/applications/applicationSchema");
+
 const Vacancy = require("../../models/providers/vacancySchema");
+
+const PlacementCandidate = require("../../models/placements/placementCandidateSchema");
+
+const Recruit = require("../../models/providers/recruitSchema");
+
+const Provider = require("../../models/providers/registerSchema");
 
 const {
   notifySeekerAboutInterview,
 } = require("../../services/interviewNotificationService");
 
 // ======================================================
-// INTERVIEW METHODS
+// CONSTANTS
 // ======================================================
 
 const INTERVIEW_METHODS = [
@@ -20,10 +28,6 @@ const INTERVIEW_METHODS = [
   "OTHER",
 ];
 
-// ======================================================
-// PROVIDER VISIBLE INTERVIEW STATUSES
-// ======================================================
-
 const PROVIDER_VISIBLE_INTERVIEW_STATUSES = [
   "AWAITING_LINK",
   "CONFIRMED",
@@ -31,48 +35,19 @@ const PROVIDER_VISIBLE_INTERVIEW_STATUSES = [
   "COMPLETED",
 ];
 
-// ======================================================
-// APPLICATION STATUSES THAT CAN ENTER INTERVIEW
-// ======================================================
-//
-// Provider may schedule an interview when:
-//
-// SENT_TO_PROVIDER
-// UNDER_REVIEW
-//
-// Once scheduled:
-//
-// application.status = INTERVIEW
-//
-// ======================================================
-
 const INTERVIEW_ELIGIBLE_APPLICATION_STATUSES = [
   "SENT_TO_PROVIDER",
   "UNDER_REVIEW",
 ];
 
-// ======================================================
-// ONLINE INTERVIEW METHODS
-// ======================================================
-
 const ONLINE_INTERVIEW_METHODS = ["ZOOM", "GOOGLE_MEET"];
 
 // ======================================================
-// GENERATE INTERVIEW ID
-//
-// Example:
-//
-// INT-A12B34CD
-//
+// HELPERS
 // ======================================================
 
-const generateInterviewId = () => {
-  return `INT-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
-};
-
-// ======================================================
-// STRING VALUE
-// ======================================================
+const generateInterviewId = () =>
+  `INT-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
 const normalizeString = (value) => {
   if (typeof value !== "string") {
@@ -82,20 +57,6 @@ const normalizeString = (value) => {
   return value.trim();
 };
 
-// ======================================================
-// VALIDATE INTERVIEW TIME
-//
-// Expected:
-//
-// HH:mm
-//
-// Examples:
-//
-// 09:00
-// 14:30
-//
-// ======================================================
-
 const isValidInterviewTime = (value) => {
   if (typeof value !== "string") {
     return false;
@@ -103,16 +64,6 @@ const isValidInterviewTime = (value) => {
 
   return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value.trim());
 };
-
-// ======================================================
-// PARSE INTERVIEW DATE
-//
-// Expected frontend examples:
-//
-// 2026-09-28
-// 2026-09-28T00:00:00.000Z
-//
-// ======================================================
 
 const parseInterviewDate = (value) => {
   if (!value) {
@@ -128,24 +79,6 @@ const parseInterviewDate = (value) => {
   return date;
 };
 
-// ======================================================
-// DETERMINE INTERVIEW STATUS
-// ======================================================
-//
-// Zoom / Google Meet:
-//
-// without link:
-// AWAITING_LINK
-//
-// with link:
-// CONFIRMED
-//
-// Phone / Face-to-Face / Other:
-//
-// CONFIRMED
-//
-// ======================================================
-
 const determineInterviewStatus = ({ interviewMethod, meetingLink }) => {
   if (ONLINE_INTERVIEW_METHODS.includes(interviewMethod) && !meetingLink) {
     return "AWAITING_LINK";
@@ -154,9 +87,53 @@ const determineInterviewStatus = ({ interviewMethod, meetingLink }) => {
   return "CONFIRMED";
 };
 
+const getSourceType = (interview) =>
+  interview.source_type ||
+  (interview.placement_candidate_id ? "PLACEMENT" : "APPLICATION");
+
 // ======================================================
-// PROVIDER-SAFE VACANCY SUMMARY
+// SERIALIZERS
 // ======================================================
+
+const toApplicationCandidateSummary = (application) => ({
+  name: application?.profile_snapshot?.name || null,
+
+  nationality: application?.profile_snapshot?.nationality || null,
+
+  visaType: application?.profile_snapshot?.visa_type || null,
+
+  visaExpiryDate: application?.profile_snapshot?.visa_expiry_date || null,
+
+  japaneseLevel: application?.profile_snapshot?.japanese_level || null,
+
+  skills: application?.profile_snapshot?.skills || [],
+
+  desiredJob: application?.profile_snapshot?.desired_job || null,
+
+  desiredLocation: application?.profile_snapshot?.desired_location || null,
+});
+
+const toPlacementCandidateSummary = (candidate) => {
+  const snapshot = candidate?.candidate_snapshot;
+
+  return {
+    name: snapshot?.name || null,
+
+    nationality: snapshot?.nationality || null,
+
+    visaType: snapshot?.visa_type || null,
+
+    visaExpiryDate: snapshot?.visa_expiry_date || null,
+
+    japaneseLevel: snapshot?.japanese_level || null,
+
+    skills: snapshot?.skills || [],
+
+    desiredJob: snapshot?.desired_job || null,
+
+    desiredLocation: snapshot?.desired_location || null,
+  };
+};
 
 const toVacancySummary = (vacancy) => {
   if (!vacancy) {
@@ -178,57 +155,64 @@ const toVacancySummary = (vacancy) => {
   };
 };
 
-// ======================================================
-// PROVIDER-SAFE CANDIDATE SUMMARY
-//
-// IMPORTANT:
-//
-// Provider must NOT receive:
-//
-// seeker_id
-// email
-// phone
-// address
-// profile photo
-// private documents
-//
-// ======================================================
+const toPlacementSummary = ({ recruit, provider }) => {
+  if (!recruit) {
+    return null;
+  }
 
-const toCandidateSummary = (application) => {
   return {
-    name: application?.profile_snapshot?.name || null,
+    recruitId: recruit.recruitId,
 
-    nationality: application?.profile_snapshot?.nationality || null,
+    title: recruit.job_title || null,
 
-    visaType: application?.profile_snapshot?.visa_type || null,
+    companyName: provider?.companyName || null,
 
-    visaExpiryDate: application?.profile_snapshot?.visa_expiry_date || null,
+    employmentType: recruit.employment_type || null,
 
-    japaneseLevel: application?.profile_snapshot?.japanese_level || null,
+    workLocation: recruit.work_location || null,
 
-    skills: application?.profile_snapshot?.skills || [],
-
-    desiredJob: application?.profile_snapshot?.desired_job || null,
-
-    desiredLocation: application?.profile_snapshot?.desired_location || null,
+    japaneseLevel: recruit.japanese_level_required || null,
   };
 };
 
-// ======================================================
-// PROVIDER-SAFE INTERVIEW RESPONSE
-// ======================================================
-
-const toProviderInterview = ({ interview, application, vacancy }) => {
+const toProviderInterview = ({
+  interview,
+  application = null,
+  vacancy = null,
+  placementCandidate = null,
+  recruit = null,
+  provider = null,
+}) => {
   const data = interview?.toObject ? interview.toObject() : interview;
+
+  const sourceType = getSourceType(data);
+
+  const candidate =
+    sourceType === "PLACEMENT"
+      ? toPlacementCandidateSummary(placementCandidate)
+      : toApplicationCandidateSummary(application);
+
+  const placementRequest = toPlacementSummary({
+    recruit,
+    provider,
+  });
 
   return {
     interviewId: data.interview_id,
 
-    applicationId: data.application_id,
+    sourceType,
 
-    vacancyId: data.vacancy_id,
+    applicationId: data.application_id || null,
+
+    vacancyId: data.vacancy_id || null,
+
+    placementCandidateId: data.placement_candidate_id || null,
+
+    recruitId: data.recruit_id || null,
 
     applicationStatus: application?.status || null,
+
+    placementCandidateStatus: placementCandidate?.status || null,
 
     interviewDate: data.interview_date,
 
@@ -246,83 +230,95 @@ const toProviderInterview = ({ interview, application, vacancy }) => {
 
     confirmedAt: data.confirmed_at || null,
 
+    completedAt: data.completed_at || null,
+
+    cancelledAt: data.cancelled_at || null,
+
+    cancellationReason: data.cancellation_reason || null,
+
     createdAt: data.created_at,
 
     updatedAt: data.updated_at,
 
-    candidate: toCandidateSummary(application),
+    candidate,
 
     vacancy: toVacancySummary(vacancy),
+
+    placementRequest,
   };
 };
 
 // ======================================================
-// LOAD RELATED DATA FOR INTERVIEWS
+// LOAD ONE CONTEXT
 // ======================================================
 
-const loadRelatedData = async ({ interviews, registerId }) => {
-  const applicationIds = [
-    ...new Set(
-      interviews.map((interview) => interview.application_id).filter(Boolean),
-    ),
-  ];
+const loadInterviewContext = async ({ interview, registerId }) => {
+  const sourceType = getSourceType(interview);
 
-  const vacancyIds = [
-    ...new Set(
-      interviews.map((interview) => interview.vacancy_id).filter(Boolean),
-    ),
-  ];
+  const provider = await Provider.findOne({
+    registerId,
+    role: "provider",
+  });
 
-  const [applications, vacancies] = await Promise.all([
-    applicationIds.length
-      ? Application.find({
-          application_id: {
-            $in: applicationIds,
-          },
+  if (sourceType === "PLACEMENT") {
+    const [placementCandidate, recruit] = await Promise.all([
+      PlacementCandidate.findOne({
+        placementCandidateId: interview.placement_candidate_id,
 
-          provider_id: registerId,
-        }).lean()
-      : [],
+        providerId: registerId,
+      }),
 
-    vacancyIds.length
-      ? Vacancy.find({
-          vacancyId: {
-            $in: vacancyIds,
-          },
+      Recruit.findOne({
+        recruitId: interview.recruit_id,
 
-          registerId,
-        }).lean()
-      : [],
+        company_id: registerId,
+      }),
+    ]);
+
+    return {
+      sourceType,
+      application: null,
+      vacancy: null,
+      placementCandidate,
+      recruit,
+      provider,
+    };
+  }
+
+  const [application, vacancy] = await Promise.all([
+    Application.findOne({
+      application_id: interview.application_id,
+
+      provider_id: registerId,
+    }),
+
+    Vacancy.findOne({
+      vacancyId: interview.vacancy_id,
+
+      registerId,
+    }),
   ]);
 
   return {
-    applicationMap: new Map(
-      applications.map((application) => [
-        application.application_id,
-        application,
-      ]),
-    ),
-
-    vacancyMap: new Map(
-      vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
-    ),
+    sourceType,
+    application,
+    vacancy,
+    placementCandidate: null,
+    recruit: null,
+    provider,
   };
 };
 
 // ======================================================
-// NOTIFY SEEKER SAFELY
-//
-// Interview scheduling must not fail just because
-// an email provider is temporarily unavailable.
-//
-// System/email notification errors are logged.
-//
+// NOTIFY SAFELY
 // ======================================================
 
 const notifySeekerSafely = async ({
   interview,
   application,
   vacancy,
+  recruit,
+  provider,
   eventType,
 }) => {
   try {
@@ -330,6 +326,8 @@ const notifySeekerSafely = async ({
       interview,
       application,
       vacancy,
+      recruit,
+      provider,
       eventType,
     });
   } catch (error) {
@@ -338,15 +336,7 @@ const notifySeekerSafely = async ({
 };
 
 // ======================================================
-// GET PROVIDER INTERVIEWS
-//
-// GET
-// /api/providers/interviews
-//
-// Optional:
-//
-// ?status=CONFIRMED
-//
+// GET ALL
 // ======================================================
 
 exports.getProviderInterviews = async (req, res) => {
@@ -361,7 +351,7 @@ exports.getProviderInterviews = async (req, res) => {
       });
     }
 
-    const requestedStatus = normalizeString(req.query.status);
+    const requestedStatus = normalizeString(req.query.status).toUpperCase();
 
     const query = {
       provider_id: registerId,
@@ -387,20 +377,21 @@ exports.getProviderInterviews = async (req, res) => {
       })
       .lean();
 
-    const { applicationMap, vacancyMap } = await loadRelatedData({
-      interviews,
-      registerId,
-    });
+    const data = [];
 
-    const data = interviews.map((interview) =>
-      toProviderInterview({
+    for (const interview of interviews) {
+      const context = await loadInterviewContext({
         interview,
+        registerId,
+      });
 
-        application: applicationMap.get(interview.application_id),
-
-        vacancy: vacancyMap.get(interview.vacancy_id),
-      }),
-    );
+      data.push(
+        toProviderInterview({
+          interview,
+          ...context,
+        }),
+      );
+    }
 
     return res.status(200).json({
       status: "success",
@@ -421,11 +412,7 @@ exports.getProviderInterviews = async (req, res) => {
 };
 
 // ======================================================
-// GET PROVIDER INTERVIEW BY ID
-//
-// GET
-// /api/providers/interviews/:interviewId
-//
+// GET ONE
 // ======================================================
 
 exports.getProviderInterviewById = async (req, res) => {
@@ -433,14 +420,6 @@ exports.getProviderInterviewById = async (req, res) => {
     const registerId = req.registerId;
 
     const { interviewId } = req.params;
-
-    if (!registerId) {
-      return res.status(401).json({
-        status: "error",
-
-        message: "Provider authentication required.",
-      });
-    }
 
     const interview = await Interview.findOne({
       interview_id: interviewId,
@@ -456,27 +435,17 @@ exports.getProviderInterviewById = async (req, res) => {
       });
     }
 
-    const [application, vacancy] = await Promise.all([
-      Application.findOne({
-        application_id: interview.application_id,
-
-        provider_id: registerId,
-      }),
-
-      Vacancy.findOne({
-        vacancyId: interview.vacancy_id,
-
-        registerId,
-      }),
-    ]);
+    const context = await loadInterviewContext({
+      interview,
+      registerId,
+    });
 
     return res.status(200).json({
       status: "success",
 
       data: toProviderInterview({
         interview,
-        application,
-        vacancy,
+        ...context,
       }),
     });
   } catch (error) {
@@ -491,23 +460,15 @@ exports.getProviderInterviewById = async (req, res) => {
 };
 
 // ======================================================
-// SCHEDULE INTERVIEW
+// SCHEDULE
 //
-// POST
-// /api/providers/interviews
+// Supports:
 //
-// BODY:
+// APPLICATION:
+// { applicationId }
 //
-// {
-//   "applicationId": "APP-A12B34CD",
-//   "interviewDate": "2026-09-30",
-//   "interviewTime": "14:30",
-//   "timezone": "Asia/Tokyo",
-//   "interviewMethod": "ZOOM",
-//   "meetingLink": "https://zoom.us/...",
-//   "notes": "Please join 10 minutes early."
-// }
-//
+// PLACEMENT:
+// { placementCandidateId }
 // ======================================================
 
 exports.scheduleProviderInterview = async (req, res) => {
@@ -516,15 +477,20 @@ exports.scheduleProviderInterview = async (req, res) => {
   try {
     const registerId = req.registerId;
 
-    if (!registerId) {
-      return res.status(401).json({
+    const applicationId = normalizeString(req.body.applicationId);
+
+    const placementCandidateId = normalizeString(req.body.placementCandidateId);
+
+    if (
+      (!applicationId && !placementCandidateId) ||
+      (applicationId && placementCandidateId)
+    ) {
+      return res.status(400).json({
         status: "error",
 
-        message: "Provider authentication required.",
+        message: "Provide either applicationId or placementCandidateId.",
       });
     }
-
-    const applicationId = normalizeString(req.body.applicationId);
 
     const interviewDate = parseInterviewDate(req.body.interviewDate);
 
@@ -539,18 +505,6 @@ exports.scheduleProviderInterview = async (req, res) => {
     const meetingLink = normalizeString(req.body.meetingLink) || null;
 
     const notes = normalizeString(req.body.notes) || null;
-
-    // ==================================================
-    // VALIDATION
-    // ==================================================
-
-    if (!applicationId) {
-      return res.status(400).json({
-        status: "error",
-
-        message: "applicationId is required.",
-      });
-    }
 
     if (!interviewDate) {
       return res.status(400).json({
@@ -592,87 +546,6 @@ exports.scheduleProviderInterview = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // FIND APPLICATION
-    // ==================================================
-
-    const application = await Application.findOne({
-      application_id: applicationId,
-
-      provider_id: registerId,
-    });
-
-    if (!application) {
-      return res.status(404).json({
-        status: "error",
-
-        message: "Application not found.",
-      });
-    }
-
-    // ==================================================
-    // APPLICATION MUST BE READY FOR INTERVIEW
-    // ==================================================
-
-    if (!INTERVIEW_ELIGIBLE_APPLICATION_STATUSES.includes(application.status)) {
-      if (application.status === "INTERVIEW") {
-        return res.status(409).json({
-          status: "error",
-
-          message: "This application is already in the interview stage.",
-        });
-      }
-
-      return res.status(409).json({
-        status: "error",
-
-        message:
-          "This application cannot be scheduled for interview in its current status.",
-      });
-    }
-
-    // ==================================================
-    // PREVENT DUPLICATE INTERVIEW
-    //
-    // One application has one interview record.
-    //
-    // Rescheduling is done by updating that record.
-    // ==================================================
-
-    const existingInterview = await Interview.findOne({
-      application_id: application.application_id,
-    });
-
-    if (existingInterview) {
-      return res.status(409).json({
-        status: "error",
-
-        message: "An interview already exists for this application.",
-      });
-    }
-
-    // ==================================================
-    // VERIFY VACANCY BELONGS TO PROVIDER
-    // ==================================================
-
-    const vacancy = await Vacancy.findOne({
-      vacancyId: application.vacancy_id,
-
-      registerId,
-    });
-
-    if (!vacancy) {
-      return res.status(404).json({
-        status: "error",
-
-        message: "Related vacancy not found.",
-      });
-    }
-
-    // ==================================================
-    // INTERVIEW STATUS
-    // ==================================================
-
     const interviewStatus = determineInterviewStatus({
       interviewMethod,
       meetingLink,
@@ -681,19 +554,223 @@ exports.scheduleProviderInterview = async (req, res) => {
     const now = new Date();
 
     // ==================================================
-    // CREATE INTERVIEW
+    // APPLICATION INTERVIEW
     // ==================================================
+
+    if (applicationId) {
+      const application = await Application.findOne({
+        application_id: applicationId,
+
+        provider_id: registerId,
+      });
+
+      if (!application) {
+        return res.status(404).json({
+          status: "error",
+
+          message: "Application not found.",
+        });
+      }
+
+      if (
+        !INTERVIEW_ELIGIBLE_APPLICATION_STATUSES.includes(application.status)
+      ) {
+        return res.status(409).json({
+          status: "error",
+
+          message:
+            "This application cannot be scheduled for interview in its current status.",
+        });
+      }
+
+      const existing = await Interview.findOne({
+        application_id: application.application_id,
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          status: "error",
+
+          message: "An interview already exists for this application.",
+        });
+      }
+
+      const vacancy = await Vacancy.findOne({
+        vacancyId: application.vacancy_id,
+
+        registerId,
+      });
+
+      if (!vacancy) {
+        return res.status(404).json({
+          status: "error",
+
+          message: "Related vacancy not found.",
+        });
+      }
+
+      createdInterview = await Interview.create({
+        interview_id: generateInterviewId(),
+
+        source_type: "APPLICATION",
+
+        application_id: application.application_id,
+
+        vacancy_id: application.vacancy_id,
+
+        seeker_id: application.seeker_id,
+
+        provider_id: application.provider_id,
+
+        interview_date: interviewDate,
+
+        interview_time: interviewTime,
+
+        timezone,
+
+        interview_method: interviewMethod,
+
+        meeting_link: meetingLink,
+
+        notes,
+
+        status: interviewStatus,
+
+        scheduled_by_role: "provider",
+
+        scheduled_by_id: registerId,
+
+        updated_by_role: "provider",
+
+        updated_by_id: registerId,
+
+        confirmed_at: interviewStatus === "CONFIRMED" ? now : null,
+      });
+
+      application.status = "INTERVIEW";
+
+      try {
+        await application.save();
+      } catch (applicationError) {
+        await Interview.deleteOne({
+          _id: createdInterview._id,
+        });
+
+        throw applicationError;
+      }
+
+      if (createdInterview.status === "CONFIRMED") {
+        await notifySeekerSafely({
+          interview: createdInterview,
+
+          application,
+
+          vacancy,
+
+          recruit: null,
+
+          provider: req.provider || null,
+
+          eventType: "INTERVIEW_SCHEDULED",
+        });
+      }
+
+      return res.status(201).json({
+        status: "success",
+
+        message:
+          createdInterview.status === "AWAITING_LINK"
+            ? "Interview scheduled. A meeting link must be added before the candidate receives the final interview notification."
+            : "Interview scheduled and confirmed successfully.",
+
+        data: toProviderInterview({
+          interview: createdInterview,
+
+          application,
+
+          vacancy,
+
+          placementCandidate: null,
+
+          recruit: null,
+
+          provider: req.provider || null,
+        }),
+      });
+    }
+
+    // ==================================================
+    // PLACEMENT INTERVIEW
+    // ==================================================
+
+    const placementCandidate = await PlacementCandidate.findOne({
+      placementCandidateId,
+
+      providerId: registerId,
+    });
+
+    if (!placementCandidate) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Placement candidate not found.",
+      });
+    }
+
+    if (!["UNDER_REVIEW", "INTERVIEW"].includes(placementCandidate.status)) {
+      return res.status(409).json({
+        status: "error",
+
+        message:
+          "This placement candidate cannot be scheduled for interview in its current status.",
+      });
+    }
+
+    const existing = await Interview.findOne({
+      placement_candidate_id: placementCandidateId,
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        status: "error",
+
+        message: "An interview already exists for this placement candidate.",
+      });
+    }
+
+    const recruit = await Recruit.findOne({
+      recruitId: placementCandidate.recruitId,
+
+      company_id: registerId,
+
+      status: "approved",
+    });
+
+    if (!recruit) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Related placement request not found.",
+      });
+    }
+
+    const provider = await Provider.findOne({
+      registerId,
+      role: "provider",
+    });
 
     createdInterview = await Interview.create({
       interview_id: generateInterviewId(),
 
-      application_id: application.application_id,
+      source_type: "PLACEMENT",
 
-      seeker_id: application.seeker_id,
+      placement_candidate_id: placementCandidate.placementCandidateId,
 
-      provider_id: application.provider_id,
+      recruit_id: placementCandidate.recruitId,
 
-      vacancy_id: application.vacancy_id,
+      seeker_id: placementCandidate.seekerId,
+
+      provider_id: placementCandidate.providerId,
 
       interview_date: interviewDate,
 
@@ -718,54 +795,37 @@ exports.scheduleProviderInterview = async (req, res) => {
       updated_by_id: registerId,
 
       confirmed_at: interviewStatus === "CONFIRMED" ? now : null,
-
-      notification_sent_at: null,
     });
 
-    // ==================================================
-    // MOVE APPLICATION TO INTERVIEW
-    // ==================================================
+    const previousStatus = placementCandidate.status;
 
-    application.status = "INTERVIEW";
+    placementCandidate.status = "INTERVIEW";
+
+    placementCandidate.interviewAt = now;
 
     try {
-      await application.save();
-    } catch (applicationError) {
-      // ================================================
-      // ROLLBACK INTERVIEW IF APPLICATION UPDATE FAILS
-      // ================================================
-
+      await placementCandidate.save();
+    } catch (candidateError) {
       await Interview.deleteOne({
         _id: createdInterview._id,
       });
 
-      createdInterview = null;
+      placementCandidate.status = previousStatus;
 
-      throw applicationError;
+      throw candidateError;
     }
-
-    // ==================================================
-    // NOTIFICATION
-    //
-    // Requirement flow:
-    //
-    // Online interview without meeting link:
-    // do not send final interview notification yet.
-    //
-    // Once link is added:
-    // CONFIRMED → notify candidate.
-    //
-    // Phone / Face-to-Face / Other:
-    // immediately CONFIRMED → notify candidate.
-    // ==================================================
 
     if (createdInterview.status === "CONFIRMED") {
       await notifySeekerSafely({
         interview: createdInterview,
 
-        application,
+        application: null,
 
-        vacancy,
+        vacancy: null,
+
+        recruit,
+
+        provider,
 
         eventType: "INTERVIEW_SCHEDULED",
       });
@@ -776,15 +836,21 @@ exports.scheduleProviderInterview = async (req, res) => {
 
       message:
         createdInterview.status === "AWAITING_LINK"
-          ? "Interview scheduled. A meeting link must be added before the candidate receives the final interview notification."
-          : "Interview scheduled and confirmed successfully.",
+          ? "Placement interview scheduled. A meeting link must be added before the candidate receives the final notification."
+          : "Placement interview scheduled and confirmed successfully.",
 
       data: toProviderInterview({
         interview: createdInterview,
 
-        application,
+        application: null,
 
-        vacancy,
+        vacancy: null,
+
+        placementCandidate,
+
+        recruit,
+
+        provider,
       }),
     });
   } catch (error) {
@@ -794,7 +860,7 @@ exports.scheduleProviderInterview = async (req, res) => {
       return res.status(409).json({
         status: "error",
 
-        message: "An interview already exists for this application.",
+        message: "An interview already exists for this candidate.",
       });
     }
 
@@ -815,20 +881,7 @@ exports.scheduleProviderInterview = async (req, res) => {
 };
 
 // ======================================================
-// UPDATE / RESCHEDULE PROVIDER INTERVIEW
-//
-// PATCH
-// /api/providers/interviews/:interviewId
-//
-// Provider can update:
-//
-// interviewDate
-// interviewTime
-// timezone
-// interviewMethod
-// meetingLink
-// notes
-//
+// UPDATE / RESCHEDULE
 // ======================================================
 
 exports.updateProviderInterview = async (req, res) => {
@@ -836,14 +889,6 @@ exports.updateProviderInterview = async (req, res) => {
     const registerId = req.registerId;
 
     const { interviewId } = req.params;
-
-    if (!registerId) {
-      return res.status(401).json({
-        status: "error",
-
-        message: "Provider authentication required.",
-      });
-    }
 
     const interview = await Interview.findOne({
       interview_id: interviewId,
@@ -859,7 +904,7 @@ exports.updateProviderInterview = async (req, res) => {
       });
     }
 
-    if (interview.status === "CANCELLED" || interview.status === "COMPLETED") {
+    if (["CANCELLED", "COMPLETED"].includes(interview.status)) {
       return res.status(409).json({
         status: "error",
 
@@ -867,41 +912,45 @@ exports.updateProviderInterview = async (req, res) => {
       });
     }
 
-    const application = await Application.findOne({
-      application_id: interview.application_id,
-
-      provider_id: registerId,
-    });
-
-    if (!application) {
-      return res.status(404).json({
-        status: "error",
-
-        message: "Related application not found.",
-      });
-    }
-
-    if (application.status !== "INTERVIEW") {
-      return res.status(409).json({
-        status: "error",
-
-        message:
-          "Interview details can only be modified while the application is in the interview stage.",
-      });
-    }
-
-    const vacancy = await Vacancy.findOne({
-      vacancyId: interview.vacancy_id,
-
+    const context = await loadInterviewContext({
+      interview,
       registerId,
     });
 
-    if (!vacancy) {
-      return res.status(404).json({
-        status: "error",
+    if (context.sourceType === "PLACEMENT") {
+      if (!context.placementCandidate) {
+        return res.status(404).json({
+          status: "error",
 
-        message: "Related vacancy not found.",
-      });
+          message: "Related placement candidate not found.",
+        });
+      }
+
+      if (context.placementCandidate.status !== "INTERVIEW") {
+        return res.status(409).json({
+          status: "error",
+
+          message:
+            "Interview details can only be modified while the placement candidate is in the interview stage.",
+        });
+      }
+    } else {
+      if (!context.application) {
+        return res.status(404).json({
+          status: "error",
+
+          message: "Related application not found.",
+        });
+      }
+
+      if (context.application.status !== "INTERVIEW") {
+        return res.status(409).json({
+          status: "error",
+
+          message:
+            "Interview details can only be modified while the application is in the interview stage.",
+        });
+      }
     }
 
     const previousStatus = interview.status;
@@ -912,20 +961,18 @@ exports.updateProviderInterview = async (req, res) => {
 
     const previousTime = interview.interview_time;
 
+    const previousTimezone = interview.timezone;
+
     const previousMethod = interview.interview_method;
 
     const previousMeetingLink = interview.meeting_link || null;
 
     const previousNotes = interview.notes || null;
 
-    // ==================================================
-    // DATE
-    // ==================================================
-
     if (req.body.interviewDate !== undefined) {
-      const interviewDate = parseInterviewDate(req.body.interviewDate);
+      const value = parseInterviewDate(req.body.interviewDate);
 
-      if (!interviewDate) {
+      if (!value) {
         return res.status(400).json({
           status: "error",
 
@@ -933,17 +980,13 @@ exports.updateProviderInterview = async (req, res) => {
         });
       }
 
-      interview.interview_date = interviewDate;
+      interview.interview_date = value;
     }
 
-    // ==================================================
-    // TIME
-    // ==================================================
-
     if (req.body.interviewTime !== undefined) {
-      const interviewTime = normalizeString(req.body.interviewTime);
+      const value = normalizeString(req.body.interviewTime);
 
-      if (!isValidInterviewTime(interviewTime)) {
+      if (!isValidInterviewTime(value)) {
         return res.status(400).json({
           status: "error",
 
@@ -951,17 +994,13 @@ exports.updateProviderInterview = async (req, res) => {
         });
       }
 
-      interview.interview_time = interviewTime;
+      interview.interview_time = value;
     }
 
-    // ==================================================
-    // TIMEZONE
-    // ==================================================
-
     if (req.body.timezone !== undefined) {
-      const timezone = normalizeString(req.body.timezone);
+      const value = normalizeString(req.body.timezone);
 
-      if (!timezone) {
+      if (!value) {
         return res.status(400).json({
           status: "error",
 
@@ -969,19 +1008,13 @@ exports.updateProviderInterview = async (req, res) => {
         });
       }
 
-      interview.timezone = timezone;
+      interview.timezone = value;
     }
 
-    // ==================================================
-    // METHOD
-    // ==================================================
-
     if (req.body.interviewMethod !== undefined) {
-      const interviewMethod = normalizeString(
-        req.body.interviewMethod,
-      ).toUpperCase();
+      const value = normalizeString(req.body.interviewMethod).toUpperCase();
 
-      if (!INTERVIEW_METHODS.includes(interviewMethod)) {
+      if (!INTERVIEW_METHODS.includes(value)) {
         return res.status(400).json({
           status: "error",
 
@@ -989,17 +1022,13 @@ exports.updateProviderInterview = async (req, res) => {
         });
       }
 
-      interview.interview_method = interviewMethod;
+      interview.interview_method = value;
     }
 
-    // ==================================================
-    // MEETING LINK
-    // ==================================================
-
     if (req.body.meetingLink !== undefined) {
-      const meetingLink = normalizeString(req.body.meetingLink) || null;
+      const value = normalizeString(req.body.meetingLink) || null;
 
-      if (meetingLink && meetingLink.length > 2000) {
+      if (value && value.length > 2000) {
         return res.status(400).json({
           status: "error",
 
@@ -1007,17 +1036,13 @@ exports.updateProviderInterview = async (req, res) => {
         });
       }
 
-      interview.meeting_link = meetingLink;
+      interview.meeting_link = value;
     }
 
-    // ==================================================
-    // NOTES
-    // ==================================================
-
     if (req.body.notes !== undefined) {
-      const notes = normalizeString(req.body.notes) || null;
+      const value = normalizeString(req.body.notes) || null;
 
-      if (notes && notes.length > 2000) {
+      if (value && value.length > 2000) {
         return res.status(400).json({
           status: "error",
 
@@ -1025,12 +1050,8 @@ exports.updateProviderInterview = async (req, res) => {
         });
       }
 
-      interview.notes = notes;
+      interview.notes = value;
     }
-
-    // ==================================================
-    // RECALCULATE STATUS
-    // ==================================================
 
     const nextStatus = determineInterviewStatus({
       interviewMethod: interview.interview_method,
@@ -1054,56 +1075,32 @@ exports.updateProviderInterview = async (req, res) => {
 
     await interview.save();
 
-    // ==================================================
-    // DETERMINE IF CONFIRMED DETAILS CHANGED
-    // ==================================================
-
     const currentDate = interview.interview_date
       ? new Date(interview.interview_date).getTime()
       : null;
 
-    const currentTime = interview.interview_time;
-
-    const currentMethod = interview.interview_method;
-
-    const currentMeetingLink = interview.meeting_link || null;
-
-    const currentNotes = interview.notes || null;
-
     const detailsChanged =
       previousDate !== currentDate ||
-      previousTime !== currentTime ||
-      previousMethod !== currentMethod ||
-      previousMeetingLink !== currentMeetingLink ||
-      previousNotes !== currentNotes;
-
-    // ==================================================
-    // NOTIFY SEEKER
-    //
-    // Notify when:
-    //
-    // 1. AWAITING_LINK → CONFIRMED
-    //
-    // OR
-    //
-    // 2. Already confirmed interview was rescheduled /
-    //    changed.
-    // ==================================================
+      previousTime !== interview.interview_time ||
+      previousTimezone !== interview.timezone ||
+      previousMethod !== interview.interview_method ||
+      previousMeetingLink !== (interview.meeting_link || null) ||
+      previousNotes !== (interview.notes || null);
 
     if (interview.status === "CONFIRMED") {
       if (previousStatus !== "CONFIRMED") {
         await notifySeekerSafely({
           interview,
-          application,
-          vacancy,
+
+          ...context,
 
           eventType: "INTERVIEW_CONFIRMED",
         });
       } else if (detailsChanged) {
         await notifySeekerSafely({
           interview,
-          application,
-          vacancy,
+
+          ...context,
 
           eventType: "INTERVIEW_UPDATED",
         });
@@ -1118,13 +1115,12 @@ exports.updateProviderInterview = async (req, res) => {
           ? "Interview updated. A meeting link is still required."
           : previousStatus === "AWAITING_LINK" &&
               interview.status === "CONFIRMED"
-            ? "Interview link added and interview confirmed successfully."
+            ? "Interview meeting link added and interview confirmed."
             : "Interview updated successfully.",
 
       data: toProviderInterview({
         interview,
-        application,
-        vacancy,
+        ...context,
       }),
     });
   } catch (error) {

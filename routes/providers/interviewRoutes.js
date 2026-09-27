@@ -1,61 +1,44 @@
 const express = require("express");
 
-const authMiddleware = require("../../middleware/authMiddleware");
+const providerAuth = require("../../middleware/providerAuth");
 
 const {
   getProviderInterviews,
-
   getProviderInterviewById,
-
   scheduleProviderInterview,
-
   updateProviderInterview,
 } = require("../../controllers/providers/interviewController");
 
 const router = express.Router();
 
 // ======================================================
-// GET ALL PROVIDER INTERVIEWS
-//
-// GET
-// /api/providers/interviews
-//
-// Optional:
-//
-// ?status=CONFIRMED
-//
+// GET ALL
 // ======================================================
 
-router.get("/", authMiddleware, getProviderInterviews);
+router.get("/", providerAuth, getProviderInterviews);
 
 // ======================================================
-// SCHEDULE INTERVIEW
+// SCHEDULE
 //
-// POST
-// /api/providers/interviews
+// APPLICATION:
+// applicationId
 //
+// PLACEMENT:
+// placementCandidateId
 // ======================================================
 
-router.post("/", authMiddleware, scheduleProviderInterview);
+router.post("/", providerAuth, scheduleProviderInterview);
 
 // ======================================================
-// GET ONE INTERVIEW
-//
-// GET
-// /api/providers/interviews/:interviewId
-//
+// GET ONE
 // ======================================================
 
-router.get("/:interviewId", authMiddleware, getProviderInterviewById);
+router.get("/:interviewId", providerAuth, getProviderInterviewById);
 
 // ======================================================
-// UPDATE / RESCHEDULE INTERVIEW
-//
-// PATCH
-// /api/providers/interviews/:interviewId
-//
+// UPDATE
 // ======================================================
 
-router.patch("/:interviewId", authMiddleware, updateProviderInterview);
+router.patch("/:interviewId", providerAuth, updateProviderInterview);
 
 module.exports = router;

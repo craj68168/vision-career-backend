@@ -4,25 +4,13 @@ const Application = require("../../models/applications/applicationSchema");
 
 const Vacancy = require("../../models/providers/vacancySchema");
 
-// ======================================================
-// SEEKER VISIBLE INTERVIEW STATUSES
-// ======================================================
-//
-// IMPORTANT:
-//
-// AWAITING_LINK is intentionally hidden from the Seeker.
-//
-// For Zoom / Google Meet interviews, the candidate should
-// receive the final interview information only after the
-// meeting link is ready.
-//
-// ======================================================
+const PlacementCandidate = require("../../models/placements/placementCandidateSchema");
+
+const Recruit = require("../../models/providers/recruitSchema");
+
+const Provider = require("../../models/providers/registerSchema");
 
 const SEEKER_VISIBLE_STATUSES = ["CONFIRMED", "COMPLETED", "CANCELLED"];
-
-// ======================================================
-// NORMALIZE STRING
-// ======================================================
 
 const normalizeString = (value) => {
   if (typeof value !== "string") {
@@ -32,60 +20,118 @@ const normalizeString = (value) => {
   return value.trim();
 };
 
-// ======================================================
-// SEEKER-SAFE VACANCY SUMMARY
-// ======================================================
-//
-// Do NOT expose:
-//
-// registerId
-// contactPerson
-// contactEmail
-// workLocationDetail
-//
-// ======================================================
+const getSourceType = (interview) =>
+  interview.source_type ||
+  (interview.placement_candidate_id ? "PLACEMENT" : "APPLICATION");
 
-const toSeekerVacancySummary = (vacancy) => {
-  if (!vacancy) {
-    return null;
+const toDisplayJob = ({ vacancy, recruit, provider }) => ({
+  vacancyId: vacancy?.vacancyId || null,
+
+  recruitId: recruit?.recruitId || null,
+
+  companyName: vacancy?.companyName || provider?.companyName || null,
+
+  companyNameKana: vacancy?.companyNameKana || null,
+
+  title: vacancy?.title || recruit?.job_title || null,
+
+  titleKana: vacancy?.titleKana || null,
+
+  employmentType: vacancy?.employmentType || recruit?.employment_type || null,
+
+  workLocation: vacancy?.workLocation || recruit?.work_location || null,
+
+  remoteWork: vacancy?.remoteWork || null,
+});
+
+const loadContext = async ({ interview, seekerId }) => {
+  const sourceType = getSourceType(interview);
+
+  const provider = await Provider.findOne({
+    registerId: interview.provider_id,
+  }).lean();
+
+  if (sourceType === "PLACEMENT") {
+    const [placementCandidate, recruit] = await Promise.all([
+      PlacementCandidate.findOne({
+        placementCandidateId: interview.placement_candidate_id,
+
+        seekerId,
+      }).lean(),
+
+      Recruit.findOne({
+        recruitId: interview.recruit_id,
+      }).lean(),
+    ]);
+
+    return {
+      sourceType,
+      application: null,
+      vacancy: null,
+      placementCandidate,
+      recruit,
+      provider,
+    };
   }
 
+  const [application, vacancy] = await Promise.all([
+    Application.findOne({
+      application_id: interview.application_id,
+
+      seeker_id: seekerId,
+    }).lean(),
+
+    Vacancy.findOne({
+      vacancyId: interview.vacancy_id,
+    }).lean(),
+  ]);
+
   return {
-    vacancyId: vacancy.vacancyId,
-
-    companyName: vacancy.companyName,
-
-    companyNameKana: vacancy.companyNameKana || null,
-
-    title: vacancy.title,
-
-    titleKana: vacancy.titleKana || null,
-
-    employmentType: vacancy.employmentType || null,
-
-    workLocation: vacancy.workLocation || null,
-
-    remoteWork: vacancy.remoteWork || null,
+    sourceType,
+    application,
+    vacancy,
+    placementCandidate: null,
+    recruit: null,
+    provider,
   };
 };
 
-// ======================================================
-// SEEKER INTERVIEW SERIALIZER
-// ======================================================
-
-const toSeekerInterview = ({ interview, application, vacancy }) => {
+const toSeekerInterview = ({
+  interview,
+  application,
+  vacancy,
+  placementCandidate,
+  recruit,
+  provider,
+}) => {
   const data = interview?.toObject ? interview.toObject() : interview;
 
+  const sourceType = getSourceType(data);
+
   const isCancelled = data.status === "CANCELLED";
+
+  const job = toDisplayJob({
+    vacancy,
+    recruit,
+    provider,
+  });
 
   return {
     interviewId: data.interview_id,
 
-    applicationId: data.application_id,
+    sourceType,
 
-    vacancyId: data.vacancy_id,
+    applicationId: data.application_id || null,
+
+    vacancyId: data.vacancy_id || null,
+
+    placementCandidateId: data.placement_candidate_id || null,
+
+    recruitId: data.recruit_id || null,
 
     applicationStatus: application?.status || null,
+
+    placementCandidateStatus: placementCandidate?.status || null,
 
     interviewDate: data.interview_date,
 
@@ -94,8 +140,6 @@ const toSeekerInterview = ({ interview, application, vacancy }) => {
     timezone: data.timezone,
 
     interviewMethod: data.interview_method,
-
-    // Do not expose an old meeting link after cancellation.
 
     meetingLink: isCancelled ? null : data.meeting_link || null,
 
@@ -115,71 +159,28 @@ const toSeekerInterview = ({ interview, application, vacancy }) => {
 
     updatedAt: data.updated_at,
 
-    vacancy: toSeekerVacancySummary(vacancy),
-  };
-};
+    // Keep "vacancy" for current frontend compatibility.
+    vacancy: job,
 
-// ======================================================
-// LOAD RELATED DATA
-// ======================================================
+    placementRequest:
+      sourceType === "PLACEMENT"
+        ? {
+            recruitId: recruit?.recruitId || null,
 
-const loadRelatedData = async ({ interviews, seekerId }) => {
-  const applicationIds = [
-    ...new Set(
-      interviews.map((interview) => interview.application_id).filter(Boolean),
-    ),
-  ];
+            title: recruit?.job_title || null,
 
-  const vacancyIds = [
-    ...new Set(
-      interviews.map((interview) => interview.vacancy_id).filter(Boolean),
-    ),
-  ];
+            companyName: provider?.companyName || null,
 
-  const [applications, vacancies] = await Promise.all([
-    applicationIds.length
-      ? Application.find({
-          application_id: {
-            $in: applicationIds,
-          },
+            employmentType: recruit?.employment_type || null,
 
-          seeker_id: seekerId,
-        }).lean()
-      : [],
-
-    vacancyIds.length
-      ? Vacancy.find({
-          vacancyId: {
-            $in: vacancyIds,
-          },
-        }).lean()
-      : [],
-  ]);
-
-  return {
-    applicationMap: new Map(
-      applications.map((application) => [
-        application.application_id,
-        application,
-      ]),
-    ),
-
-    vacancyMap: new Map(
-      vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
-    ),
+            workLocation: recruit?.work_location || null,
+          }
+        : null,
   };
 };
 
 // ======================================================
 // GET MY INTERVIEWS
-//
-// GET
-// /api/seekers/interviews
-//
-// Optional:
-//
-// ?status=CONFIRMED
-//
 // ======================================================
 
 exports.getMyInterviews = async (req, res) => {
@@ -204,10 +205,6 @@ exports.getMyInterviews = async (req, res) => {
       },
     };
 
-    // ==================================================
-    // OPTIONAL STATUS FILTER
-    // ==================================================
-
     if (requestedStatus) {
       if (!SEEKER_VISIBLE_STATUSES.includes(requestedStatus)) {
         return res.status(400).json({
@@ -220,10 +217,6 @@ exports.getMyInterviews = async (req, res) => {
       query.status = requestedStatus;
     }
 
-    // ==================================================
-    // LOAD INTERVIEWS
-    // ==================================================
-
     const interviews = await Interview.find(query)
       .sort({
         interview_date: 1,
@@ -232,24 +225,21 @@ exports.getMyInterviews = async (req, res) => {
       })
       .lean();
 
-    const { applicationMap, vacancyMap } = await loadRelatedData({
-      interviews,
-      seekerId,
-    });
+    const data = [];
 
-    const data = interviews.map((interview) =>
-      toSeekerInterview({
+    for (const interview of interviews) {
+      const context = await loadContext({
         interview,
+        seekerId,
+      });
 
-        application: applicationMap.get(interview.application_id),
-
-        vacancy: vacancyMap.get(interview.vacancy_id),
-      }),
-    );
-
-    // ==================================================
-    // SUMMARY
-    // ==================================================
+      data.push(
+        toSeekerInterview({
+          interview,
+          ...context,
+        }),
+      );
+    }
 
     const [confirmed, completed, cancelled] = await Promise.all([
       Interview.countDocuments({
@@ -278,9 +268,7 @@ exports.getMyInterviews = async (req, res) => {
 
       summary: {
         confirmed,
-
         completed,
-
         cancelled,
       },
 
@@ -298,11 +286,7 @@ exports.getMyInterviews = async (req, res) => {
 };
 
 // ======================================================
-// GET MY INTERVIEW BY ID
-//
-// GET
-// /api/seekers/interviews/:interviewId
-//
+// GET ONE
 // ======================================================
 
 exports.getMyInterviewById = async (req, res) => {
@@ -318,10 +302,6 @@ exports.getMyInterviewById = async (req, res) => {
         message: "Seeker authentication required.",
       });
     }
-
-    // ==================================================
-    // INTERVIEW MUST BELONG TO LOGGED-IN SEEKER
-    // ==================================================
 
     const interview = await Interview.findOne({
       interview_id: interviewId,
@@ -341,43 +321,17 @@ exports.getMyInterviewById = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // RELATED APPLICATION
-    // ==================================================
-
-    const application = await Application.findOne({
-      application_id: interview.application_id,
-
-      seeker_id: seekerId,
+    const context = await loadContext({
+      interview,
+      seekerId,
     });
-
-    if (!application) {
-      return res.status(404).json({
-        success: false,
-
-        message: "Related application not found.",
-      });
-    }
-
-    // ==================================================
-    // RELATED VACANCY
-    // ==================================================
-
-    const vacancy = await Vacancy.findOne({
-      vacancyId: interview.vacancy_id,
-    });
-
-    // ==================================================
-    // RESPONSE
-    // ==================================================
 
     return res.status(200).json({
       success: true,
 
       data: toSeekerInterview({
         interview,
-        application,
-        vacancy,
+        ...context,
       }),
     });
   } catch (error) {

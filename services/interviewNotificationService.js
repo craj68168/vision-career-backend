@@ -7,7 +7,7 @@ const Seeker = require("../models/seekers/seekerSchema");
 const sendEmail = require("../utils/send-email");
 
 // ======================================================
-// SUPPORTED EVENTS
+// EVENTS
 // ======================================================
 
 const SUPPORTED_EVENTS = [
@@ -18,20 +18,14 @@ const SUPPORTED_EVENTS = [
 ];
 
 // ======================================================
-// GENERATE NOTIFICATION ID
-//
-// Example:
-//
-// NTF-A12B34CD
-//
+// ID
 // ======================================================
 
-const generateNotificationId = () => {
-  return `NTF-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
-};
+const generateNotificationId = () =>
+  `NTF-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
 // ======================================================
-// SAFE STRING
+// STRING
 // ======================================================
 
 const safeString = (value) => {
@@ -43,19 +37,15 @@ const safeString = (value) => {
 };
 
 // ======================================================
-// FORMAT INTERVIEW METHOD
+// METHOD LABEL
 // ======================================================
 
 const formatInterviewMethod = (method) => {
   const labels = {
     ZOOM: "Zoom",
-
     GOOGLE_MEET: "Google Meet",
-
     PHONE: "Phone",
-
     FACE_TO_FACE: "Face-to-Face",
-
     OTHER: "Other",
   };
 
@@ -63,7 +53,7 @@ const formatInterviewMethod = (method) => {
 };
 
 // ======================================================
-// FORMAT DATE
+// DATE
 // ======================================================
 
 const formatInterviewDate = (value, timezone) => {
@@ -80,11 +70,8 @@ const formatInterviewDate = (value, timezone) => {
   try {
     return new Intl.DateTimeFormat("en-US", {
       year: "numeric",
-
       month: "long",
-
       day: "numeric",
-
       timeZone: timezone || "Asia/Tokyo",
     }).format(date);
   } catch (error) {
@@ -95,13 +82,46 @@ const formatInterviewDate = (value, timezone) => {
 };
 
 // ======================================================
-// BUILD NOTIFICATION CONTENT
+// JOB CONTEXT
+//
+// APPLICATION:
+// vacancy
+//
+// PLACEMENT:
+// recruit + provider
 // ======================================================
 
-const buildNotificationContent = ({ eventType, interview, vacancy }) => {
-  const companyName = safeString(vacancy?.companyName) || "Company";
+const getJobContext = ({ vacancy, recruit, provider }) => {
+  const companyName =
+    safeString(vacancy?.companyName) ||
+    safeString(provider?.companyName) ||
+    "Company";
 
-  const jobTitle = safeString(vacancy?.title) || "Job";
+  const jobTitle =
+    safeString(vacancy?.title) || safeString(recruit?.job_title) || "Job";
+
+  return {
+    companyName,
+    jobTitle,
+  };
+};
+
+// ======================================================
+// NOTIFICATION CONTENT
+// ======================================================
+
+const buildNotificationContent = ({
+  eventType,
+  interview,
+  vacancy,
+  recruit,
+  provider,
+}) => {
+  const { companyName, jobTitle } = getJobContext({
+    vacancy,
+    recruit,
+    provider,
+  });
 
   const interviewDate = formatInterviewDate(
     interview.interview_date,
@@ -112,21 +132,13 @@ const buildNotificationContent = ({ eventType, interview, vacancy }) => {
 
   const method = formatInterviewMethod(interview.interview_method);
 
-  // ==================================================
-  // SCHEDULED
-  // ==================================================
-
   if (eventType === "INTERVIEW_SCHEDULED") {
     return {
       title: "Interview Scheduled",
 
-      message: `Your interview for ${jobTitle} at ${companyName} has been scheduled for ${interviewDate} at ${interviewTime} (${interview.timezone}).`,
+      message: `Your interview for ${jobTitle} at ${companyName} has been scheduled for ${interviewDate} at ${interviewTime} (${interview.timezone}) by ${method}.`,
     };
   }
-
-  // ==================================================
-  // CONFIRMED
-  // ==================================================
 
   if (eventType === "INTERVIEW_CONFIRMED") {
     return {
@@ -136,10 +148,6 @@ const buildNotificationContent = ({ eventType, interview, vacancy }) => {
     };
   }
 
-  // ==================================================
-  // UPDATED
-  // ==================================================
-
   if (eventType === "INTERVIEW_UPDATED") {
     return {
       title: "Interview Updated",
@@ -147,10 +155,6 @@ const buildNotificationContent = ({ eventType, interview, vacancy }) => {
       message: `Your interview for ${jobTitle} at ${companyName} has been updated. Please check the latest interview date, time and method.`,
     };
   }
-
-  // ==================================================
-  // CANCELLED
-  // ==================================================
 
   return {
     title: "Interview Cancelled",
@@ -160,13 +164,34 @@ const buildNotificationContent = ({ eventType, interview, vacancy }) => {
 };
 
 // ======================================================
-// BUILD EMAIL TEXT
+// ESCAPE HTML
 // ======================================================
 
-const buildEmailText = ({ title, seekerName, interview, vacancy }) => {
-  const companyName = safeString(vacancy?.companyName) || "Not specified";
+const escapeHtml = (value) =>
+  String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 
-  const jobTitle = safeString(vacancy?.title) || "Not specified";
+// ======================================================
+// EMAIL TEXT
+// ======================================================
+
+const buildEmailText = ({
+  title,
+  seekerName,
+  interview,
+  vacancy,
+  recruit,
+  provider,
+}) => {
+  const { companyName, jobTitle } = getJobContext({
+    vacancy,
+    recruit,
+    provider,
+  });
 
   const interviewDate = formatInterviewDate(
     interview.interview_date,
@@ -177,23 +202,14 @@ const buildEmailText = ({ title, seekerName, interview, vacancy }) => {
 
   const lines = [
     `Hello ${seekerName || "Candidate"},`,
-
     "",
-
     title,
-
     "",
-
     `Job: ${jobTitle}`,
-
     `Company: ${companyName}`,
-
     `Interview Date: ${interviewDate}`,
-
     `Interview Time: ${interview.interview_time}`,
-
     `Timezone: ${interview.timezone}`,
-
     `Interview Method: ${method}`,
   ];
 
@@ -214,26 +230,22 @@ const buildEmailText = ({ title, seekerName, interview, vacancy }) => {
 };
 
 // ======================================================
-// ESCAPE HTML
+// EMAIL HTML
 // ======================================================
 
-const escapeHtml = (value) => {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-};
-
-// ======================================================
-// BUILD EMAIL HTML
-// ======================================================
-
-const buildEmailHtml = ({ title, seekerName, interview, vacancy }) => {
-  const companyName = safeString(vacancy?.companyName) || "Not specified";
-
-  const jobTitle = safeString(vacancy?.title) || "Not specified";
+const buildEmailHtml = ({
+  title,
+  seekerName,
+  interview,
+  vacancy,
+  recruit,
+  provider,
+}) => {
+  const { companyName, jobTitle } = getJobContext({
+    vacancy,
+    recruit,
+    provider,
+  });
 
   const interviewDate = formatInterviewDate(
     interview.interview_date,
@@ -245,7 +257,9 @@ const buildEmailHtml = ({ title, seekerName, interview, vacancy }) => {
   const meetingLinkHtml = interview.meeting_link
     ? `
         <tr>
-          <td style="padding:8px 12px;font-weight:600;">Meeting Link</td>
+          <td style="padding:8px 12px;font-weight:600;">
+            Meeting Link
+          </td>
           <td style="padding:8px 12px;">
             <a
               href="${escapeHtml(interview.meeting_link)}"
@@ -262,7 +276,9 @@ const buildEmailHtml = ({ title, seekerName, interview, vacancy }) => {
   const notesHtml = interview.notes
     ? `
         <tr>
-          <td style="padding:8px 12px;font-weight:600;">Notes</td>
+          <td style="padding:8px 12px;font-weight:600;">
+            Notes
+          </td>
           <td style="padding:8px 12px;">
             ${escapeHtml(interview.notes)}
           </td>
@@ -301,49 +317,60 @@ const buildEmailHtml = ({ title, seekerName, interview, vacancy }) => {
       >
         <tbody>
           <tr>
-            <td style="padding:8px 12px;font-weight:600;">Job</td>
+            <td style="padding:8px 12px;font-weight:600;">
+              Job
+            </td>
             <td style="padding:8px 12px;">
               ${escapeHtml(jobTitle)}
             </td>
           </tr>
 
           <tr>
-            <td style="padding:8px 12px;font-weight:600;">Company</td>
+            <td style="padding:8px 12px;font-weight:600;">
+              Company
+            </td>
             <td style="padding:8px 12px;">
               ${escapeHtml(companyName)}
             </td>
           </tr>
 
           <tr>
-            <td style="padding:8px 12px;font-weight:600;">Interview Date</td>
+            <td style="padding:8px 12px;font-weight:600;">
+              Interview Date
+            </td>
             <td style="padding:8px 12px;">
               ${escapeHtml(interviewDate)}
             </td>
           </tr>
 
           <tr>
-            <td style="padding:8px 12px;font-weight:600;">Interview Time</td>
+            <td style="padding:8px 12px;font-weight:600;">
+              Interview Time
+            </td>
             <td style="padding:8px 12px;">
               ${escapeHtml(interview.interview_time)}
             </td>
           </tr>
 
           <tr>
-            <td style="padding:8px 12px;font-weight:600;">Timezone</td>
+            <td style="padding:8px 12px;font-weight:600;">
+              Timezone
+            </td>
             <td style="padding:8px 12px;">
               ${escapeHtml(interview.timezone)}
             </td>
           </tr>
 
           <tr>
-            <td style="padding:8px 12px;font-weight:600;">Interview Method</td>
+            <td style="padding:8px 12px;font-weight:600;">
+              Interview Method
+            </td>
             <td style="padding:8px 12px;">
               ${escapeHtml(method)}
             </td>
           </tr>
 
           ${meetingLinkHtml}
-
           ${notesHtml}
         </tbody>
       </table>
@@ -356,17 +383,25 @@ const buildEmailHtml = ({ title, seekerName, interview, vacancy }) => {
 };
 
 // ======================================================
-// CREATE SYSTEM NOTIFICATION
+// SYSTEM NOTIFICATION
 // ======================================================
 
 const createSystemNotification = async ({
   seeker,
   interview,
   vacancy,
+  recruit,
+  provider,
   eventType,
   title,
   message,
 }) => {
+  const { companyName, jobTitle } = getJobContext({
+    vacancy,
+    recruit,
+    provider,
+  });
+
   return Notification.create({
     notification_id: generateNotificationId(),
 
@@ -383,13 +418,19 @@ const createSystemNotification = async ({
     interview: {
       interview_id: interview.interview_id,
 
-      application_id: interview.application_id,
+      source_type: interview.source_type,
 
-      vacancy_id: interview.vacancy_id,
+      application_id: interview.application_id || null,
 
-      company_name: vacancy?.companyName || null,
+      vacancy_id: interview.vacancy_id || null,
 
-      job_title: vacancy?.title || null,
+      placement_candidate_id: interview.placement_candidate_id || null,
+
+      recruit_id: interview.recruit_id || null,
+
+      company_name: companyName,
+
+      job_title: jobTitle,
 
       interview_date: interview.interview_date,
 
@@ -411,10 +452,17 @@ const createSystemNotification = async ({
 };
 
 // ======================================================
-// SEND INTERVIEW EMAIL
+// EMAIL
 // ======================================================
 
-const sendInterviewEmail = async ({ seeker, interview, vacancy, title }) => {
+const sendInterviewEmail = async ({
+  seeker,
+  interview,
+  vacancy,
+  recruit,
+  provider,
+  title,
+}) => {
   if (!seeker.email) {
     return;
   }
@@ -423,53 +471,40 @@ const sendInterviewEmail = async ({ seeker, interview, vacancy, title }) => {
 
   const text = buildEmailText({
     title,
-
     seekerName: seeker.name,
-
     interview,
-
     vacancy,
+    recruit,
+    provider,
   });
 
   const html = buildEmailHtml({
     title,
-
     seekerName: seeker.name,
-
     interview,
-
     vacancy,
+    recruit,
+    provider,
   });
 
   await sendEmail({
     to: seeker.email,
-
     subject,
-
     text,
-
     html,
   });
 };
 
 // ======================================================
-// NOTIFY SEEKER ABOUT INTERVIEW
-// ======================================================
-//
-// This creates:
-//
-// 1. System notification
-// 2. Email notification
-//
-// Email failure does NOT remove the already-created
-// system notification.
-//
+// NOTIFY SEEKER
 // ======================================================
 
 const notifySeekerAboutInterview = async ({
   interview,
-  application,
-  vacancy,
+  application = null,
+  vacancy = null,
+  recruit = null,
+  provider = null,
   eventType,
 }) => {
   if (!SUPPORTED_EVENTS.includes(eventType)) {
@@ -486,10 +521,6 @@ const notifySeekerAboutInterview = async ({
     throw new Error("Seeker information is missing.");
   }
 
-  // ==================================================
-  // FIND SEEKER
-  // ==================================================
-
   const seeker = await Seeker.findOne({
     seeker_id: seekerId,
   }).select("seeker_id name email");
@@ -498,47 +529,37 @@ const notifySeekerAboutInterview = async ({
     throw new Error("Seeker not found for interview notification.");
   }
 
-  // ==================================================
-  // CONTENT
-  // ==================================================
-
   const { title, message } = buildNotificationContent({
     eventType,
     interview,
     vacancy,
+    recruit,
+    provider,
   });
-
-  // ==================================================
-  // SYSTEM NOTIFICATION
-  // ==================================================
 
   const notification = await createSystemNotification({
     seeker,
     interview,
     vacancy,
+    recruit,
+    provider,
     eventType,
     title,
     message,
   });
-
-  // ==================================================
-  // EMAIL
-  // ==================================================
 
   try {
     await sendInterviewEmail({
       seeker,
       interview,
       vacancy,
+      recruit,
+      provider,
       title,
     });
   } catch (error) {
     console.error("INTERVIEW EMAIL ERROR:", error);
   }
-
-  // ==================================================
-  // UPDATE INTERVIEW NOTIFICATION TIME
-  // ==================================================
 
   try {
     interview.notification_sent_at = new Date();

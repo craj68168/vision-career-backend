@@ -18,12 +18,7 @@ const NOTIFICATION_TYPES = [
 const RECIPIENT_TYPES = ["seeker"];
 
 // ======================================================
-// INTERVIEW NOTIFICATION DATA
-// ======================================================
-//
-// This stores only information that may safely be shown
-// to the candidate.
-//
+// INTERVIEW DATA
 // ======================================================
 
 const interviewDataSchema = new mongoose.Schema(
@@ -34,6 +29,12 @@ const interviewDataSchema = new mongoose.Schema(
       trim: true,
     },
 
+    source_type: {
+      type: String,
+      enum: ["APPLICATION", "PLACEMENT"],
+      default: null,
+    },
+
     application_id: {
       type: String,
       default: null,
@@ -41,6 +42,18 @@ const interviewDataSchema = new mongoose.Schema(
     },
 
     vacancy_id: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    placement_candidate_id: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    recruit_id: {
       type: String,
       default: null,
       trim: true,
@@ -101,19 +114,11 @@ const interviewDataSchema = new mongoose.Schema(
 );
 
 // ======================================================
-// NOTIFICATION SCHEMA
+// NOTIFICATION
 // ======================================================
 
 const notificationSchema = new mongoose.Schema(
   {
-    // ==================================================
-    // CUSTOM NOTIFICATION ID
-    //
-    // Example:
-    //
-    // NTF-A12B34CD
-    // ==================================================
-
     notification_id: {
       type: String,
       required: true,
@@ -122,10 +127,6 @@ const notificationSchema = new mongoose.Schema(
       index: true,
       trim: true,
     },
-
-    // ==================================================
-    // RECIPIENT
-    // ==================================================
 
     recipient_type: {
       type: String,
@@ -141,20 +142,12 @@ const notificationSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // ==================================================
-    // TYPE
-    // ==================================================
-
     type: {
       type: String,
       required: true,
       enum: NOTIFICATION_TYPES,
       index: true,
     },
-
-    // ==================================================
-    // CONTENT
-    // ==================================================
 
     title: {
       type: String,
@@ -170,18 +163,10 @@ const notificationSchema = new mongoose.Schema(
       maxlength: 3000,
     },
 
-    // ==================================================
-    // RELATED INTERVIEW INFORMATION
-    // ==================================================
-
     interview: {
       type: interviewDataSchema,
       default: null,
     },
-
-    // ==================================================
-    // READ STATUS
-    // ==================================================
 
     is_read: {
       type: Boolean,
@@ -206,15 +191,11 @@ const notificationSchema = new mongoose.Schema(
 // INDEXES
 // ======================================================
 
-// Seeker notification feed.
-
 notificationSchema.index({
   recipient_type: 1,
   recipient_id: 1,
   created_at: -1,
 });
-
-// Unread notification count.
 
 notificationSchema.index({
   recipient_type: 1,
@@ -226,4 +207,8 @@ notificationSchema.index({
 // MODEL
 // ======================================================
 
-module.exports = mongoose.model("Notification", notificationSchema);
+const Notification =
+  mongoose.models.Notification ||
+  mongoose.model("Notification", notificationSchema);
+
+module.exports = Notification;
