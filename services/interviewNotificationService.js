@@ -136,7 +136,7 @@ const buildNotificationContent = ({
     return {
       title: "Interview Scheduled",
 
-      message: `Your interview for ${jobTitle} at ${companyName} has been scheduled for ${interviewDate} at ${interviewTime} (${interview.timezone}) by ${method}.`,
+      message: `Your interview for ${jobTitle} has been scheduled for ${interviewDate} at ${interviewTime} (${interview.timezone}) by ${method}.`,
     };
   }
 
@@ -144,7 +144,7 @@ const buildNotificationContent = ({
     return {
       title: "Interview Confirmed",
 
-      message: `Your interview for ${jobTitle} at ${companyName} is confirmed for ${interviewDate} at ${interviewTime} (${interview.timezone}) by ${method}.`,
+      message: `Your interview for ${jobTitle} is confirmed for ${interviewDate} at ${interviewTime} (${interview.timezone}) by ${method}.`,
     };
   }
 
@@ -152,14 +152,14 @@ const buildNotificationContent = ({
     return {
       title: "Interview Updated",
 
-      message: `Your interview for ${jobTitle} at ${companyName} has been updated. Please check the latest interview date, time and method.`,
+      message: `Your interview for ${jobTitle} has been updated. Please check the latest interview date, time and method.`,
     };
   }
 
   return {
     title: "Interview Cancelled",
 
-    message: `Your interview for ${jobTitle} at ${companyName} has been cancelled.`,
+    message: `Your interview for ${jobTitle} has been cancelled.`,
   };
 };
 
