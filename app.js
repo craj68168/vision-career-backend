@@ -480,18 +480,6 @@ const isCorrectPlacementInterviewIndex = (index) => {
 const cleanupInterviewIndexes = async () => {
   const indexes = await Interview.collection.indexes();
 
-  console.log(
-    "Current interview indexes:",
-    indexes.map((index) => ({
-      name: index.name,
-
-      key: index.key,
-
-      unique: Boolean(index.unique),
-
-      partialFilterExpression: index.partialFilterExpression || null,
-    })),
-  );
 
   for (const index of indexes) {
     // MongoDB primary index must never be removed.
@@ -556,19 +544,6 @@ const cleanupInterviewIndexes = async () => {
   await Interview.init();
 
   const finalIndexes = await Interview.collection.indexes();
-
-  console.log(
-    "✅ Interview indexes ready:",
-    finalIndexes.map((index) => ({
-      name: index.name,
-
-      key: index.key,
-
-      unique: Boolean(index.unique),
-
-      partialFilterExpression: index.partialFilterExpression || null,
-    })),
-  );
 };
 
 // ======================================================
@@ -595,10 +570,7 @@ const startServer = async () => {
 
     const vacancyIndexes = await Vacancy.collection.indexes();
 
-    console.log(
-      "Current vacancy indexes:",
-      vacancyIndexes.map((index) => index.name),
-    );
+
 
     const oldVacancyIndex = vacancyIndexes.find(
       (index) => index.name === "vacancy_id_1",
@@ -639,12 +611,6 @@ const startServer = async () => {
     // ==================================================
 
     const profileIndexes = await Profile.collection.indexes();
-
-    console.log(
-      "Current profile indexes:",
-      profileIndexes.map((index) => index.name),
-    );
-
     const oldProfileUserIndex = profileIndexes.find(
       (index) => index.name === "user_1",
     );
