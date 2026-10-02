@@ -12,7 +12,7 @@ const roundMoney = (value) => {
 // PROVIDER VISIBILITY
 //
 // Draft:
-// Admin only.
+// Admin / Staff only.
 //
 // Issued:
 // Provider can see.
@@ -57,6 +57,59 @@ const serializeRefund = (refund) => ({
 });
 
 // ======================================================
+// INVOICE SNAPSHOT SERIALIZER
+//
+// Only information that the provider needs in order to
+// view/download their invoice is exposed.
+// ======================================================
+
+const serializeInvoiceSnapshot = (snapshot) => {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    issuer: {
+      name: snapshot.issuer?.name || "",
+
+      postalCode: snapshot.issuer?.postalCode || "",
+
+      address: snapshot.issuer?.address || "",
+
+      phone: snapshot.issuer?.phone || "",
+
+      email: snapshot.issuer?.email || "",
+
+      registrationNumber: snapshot.issuer?.registrationNumber || "",
+    },
+
+    recipient: {
+      companyName: snapshot.recipient?.companyName || "",
+
+      address: snapshot.recipient?.address || "",
+
+      contactPerson: snapshot.recipient?.contactPerson || "",
+    },
+
+    bank: {
+      bankName: snapshot.bank?.bankName || "",
+
+      branchName: snapshot.bank?.branchName || "",
+
+      accountType: snapshot.bank?.accountType || "",
+
+      accountNumber: snapshot.bank?.accountNumber || "",
+
+      accountHolder: snapshot.bank?.accountHolder || "",
+    },
+
+    serviceDescription: snapshot.serviceDescription || "人材紹介手数料",
+
+    quantity: Number(snapshot.quantity || 1),
+  };
+};
+
+// ======================================================
 // SAFE PROVIDER SERIALIZER
 //
 // DO NOT EXPOSE:
@@ -80,6 +133,10 @@ const serializeProviderBilling = (billing) => {
 
   return {
     billingId: billing.billingId,
+
+    invoiceNumber: billing.invoiceNumber || null,
+
+    invoiceSnapshot: serializeInvoiceSnapshot(billing.invoiceSnapshot),
 
     placementCandidateId: billing.placementCandidateId,
 
@@ -292,6 +349,8 @@ exports.getProviderPlacementBillings = async (req, res) => {
 
 // ======================================================
 // GET ONE
+//
+// GET /api/providers/placement-billings/:billingId
 // ======================================================
 
 exports.getProviderPlacementBillingById = async (req, res) => {
