@@ -4,12 +4,66 @@ const {
   ensureAllPlacedBillings,
 } = require("../../utils/ensurePlacementBilling");
 
+const {
+  preparePlacementInvoiceForIssue,
+} = require("../../utils/placementInvoice");
+
 // ======================================================
 // MONEY
 // ======================================================
 
 const roundMoney = (value) => {
   return Math.round(Number(value || 0) * 100) / 100;
+};
+
+// ======================================================
+// INVOICE SNAPSHOT SERIALIZER
+// ======================================================
+
+const serializeInvoiceSnapshot = (snapshot) => {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    issuer: {
+      name: snapshot.issuer?.name || "",
+
+      postalCode: snapshot.issuer?.postalCode || "",
+
+      address: snapshot.issuer?.address || "",
+
+      phone: snapshot.issuer?.phone || "",
+
+      email: snapshot.issuer?.email || "",
+
+      registrationNumber: snapshot.issuer?.registrationNumber || "",
+    },
+
+    recipient: {
+      companyName: snapshot.recipient?.companyName || "",
+
+      address: snapshot.recipient?.address || "",
+
+      contactPerson: snapshot.recipient?.contactPerson || "",
+    },
+
+    bank: {
+      bankName: snapshot.bank?.bankName || "",
+
+      branchName: snapshot.bank?.branchName || "",
+
+      accountType: snapshot.bank?.accountType || "",
+
+      accountNumber: snapshot.bank?.accountNumber || "",
+
+      accountHolder: snapshot.bank?.accountHolder || "",
+    },
+
+    serviceDescription: snapshot.serviceDescription || "人材紹介手数料",
+
+    quantity: Number(snapshot.quantity || 1),
+  };
 };
 
 // ======================================================
@@ -86,6 +140,10 @@ const normalizeLegacyPaymentFields = async (billing) => {
 
 const serializeBilling = (billing) => ({
   billingId: billing.billingId,
+
+  invoiceNumber: billing.invoiceNumber || null,
+
+  invoiceSnapshot: serializeInvoiceSnapshot(billing.invoiceSnapshot),
 
   placementCandidateId: billing.placementCandidateId,
 
@@ -202,7 +260,6 @@ const buildSummary = (data) => {
 
 exports.getStaffPlacementBillings = async (req, res) => {
   try {
-    // Same compatibility behavior as Admin.
     await ensureAllPlacedBillings();
 
     const billings = await PlacementBilling.find().sort({
@@ -469,9 +526,35 @@ exports.issueStaffPlacementBilling = async (req, res) => {
       });
     }
 
+    if (!billing.dueDate) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Set the payment due date before issuing the billing.",
+      });
+    }
+
+    const issuedAt = new Date();
+
+    try {
+      await preparePlacementInvoiceForIssue(billing, issuedAt);
+    } catch (invoiceError) {
+      if (invoiceError.code === "INVOICE_CONFIGURATION_INCOMPLETE") {
+        return res.status(400).json({
+          success: false,
+
+          message: invoiceError.message,
+
+          missingFields: invoiceError.missingFields || [],
+        });
+      }
+
+      throw invoiceError;
+    }
+
     billing.status = "issued";
 
-    billing.issuedAt = new Date();
+    billing.issuedAt = issuedAt;
 
     billing.auditHistory.push({
       action: "ISSUED",
@@ -481,6 +564,8 @@ exports.issueStaffPlacementBilling = async (req, res) => {
       actor_id: req.staff.staffId,
 
       details: {
+        invoiceNumber: billing.invoiceNumber,
+
         totalAmount: billing.totalAmount,
 
         dueDate: billing.dueDate,
@@ -568,6 +653,8 @@ exports.markStaffPlacementBillingPaid = async (req, res) => {
 
       details: {
         amount: totalAmount,
+
+        invoiceNumber: billing.invoiceNumber || null,
       },
     });
 
