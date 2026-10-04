@@ -6,6 +6,10 @@ const {
   ensureAllPlacedBillings,
 } = require("../../utils/ensurePlacementBilling");
 
+const {
+  preparePlacementInvoiceForIssue,
+} = require("../../utils/placementInvoice");
+
 // ======================================================
 // MONEY HELPER
 // ======================================================
@@ -23,26 +27,49 @@ const generateRefundId = () => {
 };
 
 // ======================================================
+// INVOICE SNAPSHOT SERIALIZER
+// ======================================================
+
+const serializeInvoiceSnapshot = (snapshot) => {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    issuer: {
+      name: snapshot.issuer?.name || "",
+      postalCode: snapshot.issuer?.postalCode || "",
+      address: snapshot.issuer?.address || "",
+      phone: snapshot.issuer?.phone || "",
+      email: snapshot.issuer?.email || "",
+      registrationNumber: snapshot.issuer?.registrationNumber || "",
+    },
+
+    recipient: {
+      companyName: snapshot.recipient?.companyName || "",
+      address: snapshot.recipient?.address || "",
+      contactPerson: snapshot.recipient?.contactPerson || "",
+    },
+
+    bank: {
+      bankName: snapshot.bank?.bankName || "",
+      branchName: snapshot.bank?.branchName || "",
+      accountType: snapshot.bank?.accountType || "",
+      accountNumber: snapshot.bank?.accountNumber || "",
+      accountHolder: snapshot.bank?.accountHolder || "",
+    },
+
+    serviceDescription: snapshot.serviceDescription || "人材紹介手数料",
+
+    quantity: Number(snapshot.quantity || 1),
+  };
+};
+
+// ======================================================
 // NORMALIZE LEGACY PAYMENT FIELDS
 //
-// IMPORTANT:
-//
-// Some existing billings were marked PAID before these
-// fields existed:
-//
-// paidAmount
-// refundedAmount
-// netPaidAmount
-//
-// Example:
-//
-// totalAmount: 330000
-// status: "paid"
-// paidAmount: 0
-//
-// This function safely repairs those old records.
-//
-// It DOES NOT remove or rewrite audit history.
+// Some older billing documents may have status "paid"
+// while paidAmount/netPaidAmount are still 0.
 // ======================================================
 
 const normalizeLegacyPaymentFields = async (billing) => {
@@ -114,10 +141,6 @@ const normalizeLegacyPaymentFields = async (billing) => {
     changed = true;
   }
 
-  // ====================================================
-  // SAVE ONLY WHEN NEEDED
-  // ====================================================
-
   if (changed) {
     await billing.save();
   }
@@ -132,6 +155,10 @@ const normalizeLegacyPaymentFields = async (billing) => {
 const serializeBilling = (billing) => {
   return {
     billingId: billing.billingId,
+
+    invoiceNumber: billing.invoiceNumber || null,
+
+    invoiceSnapshot: serializeInvoiceSnapshot(billing.invoiceSnapshot),
 
     placementCandidateId: billing.placementCandidateId,
 
@@ -159,19 +186,11 @@ const serializeBilling = (billing) => {
 
     dueDate: billing.dueDate,
 
-    // ==================================================
-    // PAYMENT
-    // ==================================================
-
     paidAmount: Number(billing.paidAmount || 0),
 
     refundedAmount: Number(billing.refundedAmount || 0),
 
     netPaidAmount: Number(billing.netPaidAmount || 0),
-
-    // ==================================================
-    // STATUS
-    // ==================================================
 
     status: billing.status,
 
@@ -198,6 +217,58 @@ const serializeBilling = (billing) => {
 };
 
 // ======================================================
+// SUMMARY
+// ======================================================
+
+const buildSummary = (data) => {
+  const billableStatuses = ["issued", "paid", "partially_refunded", "refunded"];
+
+  const billedTotal = data
+    .filter((item) => billableStatuses.includes(item.status))
+    .reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+
+  const paidTotal = data.reduce(
+    (sum, item) => sum + Number(item.netPaidAmount || 0),
+    0,
+  );
+
+  const refundedTotal = data.reduce(
+    (sum, item) => sum + Number(item.refundedAmount || 0),
+    0,
+  );
+
+  const outstandingTotal = data
+    .filter((item) => item.status === "issued")
+    .reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+
+  return {
+    total: data.length,
+
+    draft: data.filter((item) => item.status === "draft").length,
+
+    issued: data.filter((item) => item.status === "issued").length,
+
+    paid: data.filter((item) => item.status === "paid").length,
+
+    partiallyRefunded: data.filter(
+      (item) => item.status === "partially_refunded",
+    ).length,
+
+    refunded: data.filter((item) => item.status === "refunded").length,
+
+    cancelled: data.filter((item) => item.status === "cancelled").length,
+
+    billedTotal: roundMoney(billedTotal),
+
+    paidTotal: roundMoney(paidTotal),
+
+    refundedTotal: roundMoney(refundedTotal),
+
+    outstandingTotal: roundMoney(outstandingTotal),
+  };
+};
+
+// ======================================================
 // GET ALL PLACEMENT BILLINGS
 //
 // GET /api/admin/placement-billings
@@ -205,120 +276,26 @@ const serializeBilling = (billing) => {
 
 exports.getPlacementBillings = async (req, res) => {
   try {
-    // ==================================================
-    // CREATE BILLINGS FOR EXISTING PLACED CANDIDATES
-    // ==================================================
-
+    // Create missing billing records for
+    // existing PLACED candidates.
     await ensureAllPlacedBillings();
-
-    // ==================================================
-    // FETCH
-    // ==================================================
 
     const billings = await PlacementBilling.find().sort({
       createdAt: -1,
     });
 
-    // ==================================================
-    // REPAIR LEGACY RECORDS
-    // ==================================================
-
     for (const billing of billings) {
       await normalizeLegacyPaymentFields(billing);
     }
 
-    // ==================================================
-    // SERIALIZE
-    // ==================================================
-
     const data = billings.map(serializeBilling);
-
-    // ==================================================
-    // BILLABLE STATUSES
-    //
-    // Draft is not yet officially billed.
-    // Cancelled is removed from financial billing totals.
-    // ==================================================
-
-    const billableStatuses = [
-      "issued",
-      "paid",
-      "partially_refunded",
-      "refunded",
-    ];
-
-    // ==================================================
-    // TOTAL BILLED
-    // ==================================================
-
-    const billedTotal = data
-      .filter((item) => billableStatuses.includes(item.status))
-      .reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
-
-    // ==================================================
-    // NET PAID
-    //
-    // Original paid minus refunds.
-    // ==================================================
-
-    const paidTotal = data.reduce(
-      (sum, item) => sum + Number(item.netPaidAmount || 0),
-      0,
-    );
-
-    // ==================================================
-    // REFUNDED
-    // ==================================================
-
-    const refundedTotal = data.reduce(
-      (sum, item) => sum + Number(item.refundedAmount || 0),
-      0,
-    );
-
-    // ==================================================
-    // OUTSTANDING
-    //
-    // Currently only issued/unpaid bills.
-    // ==================================================
-
-    const outstandingTotal = data
-      .filter((item) => item.status === "issued")
-      .reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
-
-    // ==================================================
-    // RESPONSE
-    // ==================================================
 
     return res.status(200).json({
       success: true,
 
       count: data.length,
 
-      summary: {
-        total: data.length,
-
-        draft: data.filter((item) => item.status === "draft").length,
-
-        issued: data.filter((item) => item.status === "issued").length,
-
-        paid: data.filter((item) => item.status === "paid").length,
-
-        partiallyRefunded: data.filter(
-          (item) => item.status === "partially_refunded",
-        ).length,
-
-        refunded: data.filter((item) => item.status === "refunded").length,
-
-        cancelled: data.filter((item) => item.status === "cancelled").length,
-
-        billedTotal: roundMoney(billedTotal),
-
-        paidTotal: roundMoney(paidTotal),
-
-        refundedTotal: roundMoney(refundedTotal),
-
-        outstandingTotal: roundMoney(outstandingTotal),
-      },
+      summary: buildSummary(data),
 
       data,
     });
@@ -352,10 +329,6 @@ exports.getPlacementBillingById = async (req, res) => {
         message: "Placement billing not found.",
       });
     }
-
-    // =================================================
-    // REPAIR OLD PAYMENT RECORD IF REQUIRED
-    // =================================================
 
     await normalizeLegacyPaymentFields(billing);
 
@@ -395,10 +368,6 @@ exports.updatePlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
-    // ONLY DRAFT CAN BE EDITED
-    // =================================================
-
     if (billing.status !== "draft") {
       return res.status(409).json({
         success: false,
@@ -407,11 +376,21 @@ exports.updatePlacementBilling = async (req, res) => {
       });
     }
 
+    const previousValues = {
+      placementFee: billing.placementFee,
+
+      taxRate: billing.taxRate,
+
+      dueDate: billing.dueDate,
+
+      notes: billing.notes,
+    };
+
     const { placementFee, taxRate, dueDate, notes } = req.body;
 
-    // =================================================
+    // ==================================================
     // PLACEMENT FEE
-    // =================================================
+    // ==================================================
 
     if (placementFee !== undefined) {
       const amount = Number(placementFee);
@@ -427,9 +406,9 @@ exports.updatePlacementBilling = async (req, res) => {
       billing.placementFee = amount;
     }
 
-    // =================================================
+    // ==================================================
     // TAX RATE
-    // =================================================
+    // ==================================================
 
     if (taxRate !== undefined) {
       const rate = Number(taxRate);
@@ -445,9 +424,9 @@ exports.updatePlacementBilling = async (req, res) => {
       billing.taxRate = rate;
     }
 
-    // =================================================
+    // ==================================================
     // DUE DATE
-    // =================================================
+    // ==================================================
 
     if (dueDate) {
       const parsedDueDate = new Date(dueDate);
@@ -465,15 +444,25 @@ exports.updatePlacementBilling = async (req, res) => {
       billing.dueDate = null;
     }
 
-    // =================================================
+    // ==================================================
     // NOTES
-    // =================================================
+    // ==================================================
 
-    billing.notes = notes ? String(notes).trim() : null;
+    const normalizedNotes = typeof notes === "string" ? notes.trim() : "";
 
-    // =================================================
+    if (normalizedNotes.length > 2000) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Notes cannot exceed 2000 characters.",
+      });
+    }
+
+    billing.notes = normalizedNotes || null;
+
+    // ==================================================
     // AUDIT
-    // =================================================
+    // ==================================================
 
     billing.auditHistory.push({
       action: "UPDATED",
@@ -483,11 +472,17 @@ exports.updatePlacementBilling = async (req, res) => {
       actor_id: req.admin.adminId,
 
       details: {
-        placementFee: billing.placementFee,
+        previous: previousValues,
 
-        taxRate: billing.taxRate,
+        updated: {
+          placementFee: billing.placementFee,
 
-        dueDate: billing.dueDate,
+          taxRate: billing.taxRate,
+
+          dueDate: billing.dueDate,
+
+          notes: billing.notes,
+        },
       },
     });
 
@@ -514,7 +509,13 @@ exports.updatePlacementBilling = async (req, res) => {
 // ======================================================
 // ISSUE BILLING
 //
-// DRAFT → ISSUED
+// DRAFT -> ISSUED
+//
+// Generates:
+// - invoiceNumber
+// - frozen issuer snapshot
+// - frozen provider snapshot
+// - frozen bank snapshot
 //
 // PATCH /api/admin/placement-billings/:billingId/issue
 // ======================================================
@@ -549,9 +550,49 @@ exports.issuePlacementBilling = async (req, res) => {
       });
     }
 
+    // Payment deadline is required for the
+    // Japanese invoice.
+    if (!billing.dueDate) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Set the payment due date before issuing the billing.",
+      });
+    }
+
+    const issuedAt = new Date();
+
+    // ==================================================
+    // GENERATE / FREEZE INVOICE
+    // ==================================================
+
+    try {
+      await preparePlacementInvoiceForIssue(billing, issuedAt);
+    } catch (invoiceError) {
+      if (invoiceError.code === "INVOICE_CONFIGURATION_INCOMPLETE") {
+        return res.status(400).json({
+          success: false,
+
+          message: invoiceError.message,
+
+          missingFields: invoiceError.missingFields || [],
+        });
+      }
+
+      throw invoiceError;
+    }
+
+    // ==================================================
+    // STATUS
+    // ==================================================
+
     billing.status = "issued";
 
-    billing.issuedAt = new Date();
+    billing.issuedAt = issuedAt;
+
+    // ==================================================
+    // AUDIT
+    // ==================================================
 
     billing.auditHistory.push({
       action: "ISSUED",
@@ -561,7 +602,11 @@ exports.issuePlacementBilling = async (req, res) => {
       actor_id: req.admin.adminId,
 
       details: {
+        invoiceNumber: billing.invoiceNumber,
+
         totalAmount: billing.totalAmount,
+
+        dueDate: billing.dueDate,
       },
     });
 
@@ -588,7 +633,7 @@ exports.issuePlacementBilling = async (req, res) => {
 // ======================================================
 // MARK BILLING PAID
 //
-// ISSUED → PAID
+// ISSUED -> PAID
 //
 // PATCH /api/admin/placement-billings/:billingId/paid
 // ======================================================
@@ -625,10 +670,6 @@ exports.markPlacementBillingPaid = async (req, res) => {
       });
     }
 
-    // =================================================
-    // PAYMENT VALUES
-    // =================================================
-
     billing.status = "paid";
 
     billing.paidAt = new Date();
@@ -641,10 +682,6 @@ exports.markPlacementBillingPaid = async (req, res) => {
 
     billing.fullyRefundedAt = null;
 
-    // =================================================
-    // AUDIT
-    // =================================================
-
     billing.auditHistory.push({
       action: "MARKED_PAID",
 
@@ -654,6 +691,8 @@ exports.markPlacementBillingPaid = async (req, res) => {
 
       details: {
         amount: totalAmount,
+
+        invoiceNumber: billing.invoiceNumber || null,
       },
     });
 
@@ -680,9 +719,9 @@ exports.markPlacementBillingPaid = async (req, res) => {
 // ======================================================
 // CANCEL BILLING
 //
-// DRAFT / ISSUED → CANCELLED
+// DRAFT / ISSUED -> CANCELLED
 //
-// Paid billing CANNOT simply be cancelled.
+// Paid billing cannot be cancelled.
 // Paid billing must use REFUND.
 //
 // PATCH /api/admin/placement-billings/:billingId/cancel
@@ -728,6 +767,9 @@ exports.cancelPlacementBilling = async (req, res) => {
       });
     }
 
+    // Capture before changing it.
+    const previousStatus = billing.status;
+
     billing.status = "cancelled";
 
     billing.cancelledAt = new Date();
@@ -744,7 +786,9 @@ exports.cancelPlacementBilling = async (req, res) => {
       reason,
 
       details: {
-        previousStatus: billing.status,
+        previousStatus,
+
+        invoiceNumber: billing.invoiceNumber || null,
       },
     });
 
@@ -771,21 +815,11 @@ exports.cancelPlacementBilling = async (req, res) => {
 // ======================================================
 // PROCESS REFUND
 //
-// PAID
-//   ↓
+// PAID -> PARTIALLY_REFUNDED
+// PAID -> REFUNDED
+// PARTIALLY_REFUNDED -> REFUNDED
 //
-// PARTIAL REFUND
-//   ↓
-// PARTIALLY_REFUNDED
-//
-// OR:
-//
-// FULL REFUND
-//   ↓
-// REFUNDED
-//
-// PATCH
-// /api/admin/placement-billings/:billingId/refund
+// PATCH /api/admin/placement-billings/:billingId/refund
 //
 // BODY:
 //
@@ -797,17 +831,17 @@ exports.cancelPlacementBilling = async (req, res) => {
 
 exports.refundPlacementBilling = async (req, res) => {
   try {
-    // =================================================
+    // ==================================================
     // INPUT
-    // =================================================
+    // ==================================================
 
     const amount = Number(req.body.amount);
 
     const reason = String(req.body.reason || "").trim();
 
-    // =================================================
+    // ==================================================
     // VALIDATE AMOUNT
-    // =================================================
+    // ==================================================
 
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({
@@ -817,9 +851,9 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
+    // ==================================================
     // VALIDATE REASON
-    // =================================================
+    // ==================================================
 
     if (!reason) {
       return res.status(400).json({
@@ -837,9 +871,9 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
+    // ==================================================
     // FIND BILLING
-    // =================================================
+    // ==================================================
 
     const billing = await PlacementBilling.findOne({
       billingId: req.params.billingId,
@@ -853,9 +887,9 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
+    // ==================================================
     // ALLOWED STATUSES
-    // =================================================
+    // ==================================================
 
     if (!["paid", "partially_refunded"].includes(billing.status)) {
       return res.status(409).json({
@@ -865,14 +899,13 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
+    // ==================================================
     // ORIGINAL PAID AMOUNT
     //
     // Legacy fallback:
     //
-    // If paidAmount is 0 but this is an old paid record,
-    // totalAmount becomes the original payment.
-    // =================================================
+    // Old records may have status paid but paidAmount=0.
+    // ==================================================
 
     const paidAmount = roundMoney(
       Number(billing.paidAmount || billing.totalAmount || 0),
@@ -886,32 +919,20 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
-    // IMPORTANT LEGACY FIX
-    //
-    // Persist the fallback into the document before save.
-    //
-    // Otherwise schema pre-validation could see:
-    //
-    // paidAmount = 0
-    // refundedAmount = 30000
-    //
-    // and incorrectly calculate netPaidAmount = 0.
-    // =================================================
-
+    // Persist legacy fallback before validation.
     if (Number(billing.paidAmount || 0) <= 0) {
       billing.paidAmount = paidAmount;
     }
 
-    // =================================================
+    // ==================================================
     // EXISTING REFUNDS
-    // =================================================
+    // ==================================================
 
     const alreadyRefunded = roundMoney(Number(billing.refundedAmount || 0));
 
-    // =================================================
-    // AVAILABLE REFUND AMOUNT
-    // =================================================
+    // ==================================================
+    // AVAILABLE REFUND
+    // ==================================================
 
     const refundableAmount = roundMoney(
       Math.max(paidAmount - alreadyRefunded, 0),
@@ -925,9 +946,9 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
+    // ==================================================
     // NORMALIZE REQUESTED REFUND
-    // =================================================
+    // ==================================================
 
     const normalizedAmount = roundMoney(amount);
 
@@ -939,9 +960,9 @@ exports.refundPlacementBilling = async (req, res) => {
       });
     }
 
-    // =================================================
+    // ==================================================
     // NEW FINANCIAL TOTALS
-    // =================================================
+    // ==================================================
 
     const newRefundedAmount = roundMoney(alreadyRefunded + normalizedAmount);
 
@@ -951,9 +972,9 @@ exports.refundPlacementBilling = async (req, res) => {
 
     const isFullyRefunded = newNetPaidAmount <= 0;
 
-    // =================================================
+    // ==================================================
     // CREATE REFUND RECORD
-    // =================================================
+    // ==================================================
 
     const refundId = generateRefundId();
 
@@ -973,17 +994,17 @@ exports.refundPlacementBilling = async (req, res) => {
       refunded_at: refundDate,
     });
 
-    // =================================================
-    // UPDATE BILLING TOTALS
-    // =================================================
+    // ==================================================
+    // UPDATE TOTALS
+    // ==================================================
 
     billing.refundedAmount = newRefundedAmount;
 
     billing.netPaidAmount = newNetPaidAmount;
 
-    // =================================================
+    // ==================================================
     // STATUS
-    // =================================================
+    // ==================================================
 
     if (isFullyRefunded) {
       billing.status = "refunded";
@@ -995,9 +1016,9 @@ exports.refundPlacementBilling = async (req, res) => {
       billing.fullyRefundedAt = null;
     }
 
-    // =================================================
+    // ==================================================
     // AUDIT
-    // =================================================
+    // ==================================================
 
     billing.auditHistory.push({
       action: "REFUND_PROCESSED",
@@ -1010,6 +1031,8 @@ exports.refundPlacementBilling = async (req, res) => {
 
       details: {
         refundId,
+
+        invoiceNumber: billing.invoiceNumber || null,
 
         refundAmount: normalizedAmount,
 
@@ -1025,15 +1048,15 @@ exports.refundPlacementBilling = async (req, res) => {
       },
     });
 
-    // =================================================
+    // ==================================================
     // SAVE
-    // =================================================
+    // ==================================================
 
     await billing.save();
 
-    // =================================================
+    // ==================================================
     // RESPONSE
-    // =================================================
+    // ==================================================
 
     return res.status(200).json({
       success: true,
