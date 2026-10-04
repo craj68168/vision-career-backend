@@ -103,6 +103,7 @@ const refundSchema = new mongoose.Schema(
 // the invoice is issued.
 //
 // IMPORTANT:
+//
 // If company information changes later, an old invoice
 // must continue showing the original information.
 // ======================================================
@@ -187,6 +188,7 @@ const invoiceRecipientSchema = new mongoose.Schema(
 // Bank information at issue time.
 //
 // IMPORTANT:
+//
 // This is a display/instruction snapshot only.
 // It does NOT connect to the bank and does NOT
 // automatically transfer money.
@@ -396,9 +398,6 @@ const placementBillingSchema = new mongoose.Schema(
       type: String,
       default: null,
       trim: true,
-      unique: true,
-      sparse: true,
-      index: true,
     },
 
     invoiceSnapshot: {
@@ -496,6 +495,45 @@ const placementBillingSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+  },
+);
+
+// ======================================================
+// INVOICE NUMBER INDEX
+//
+// IMPORTANT:
+//
+// Draft billings intentionally have:
+//
+// invoiceNumber: null
+//
+// Multiple drafts must therefore be allowed.
+//
+// Only real customer-facing invoice numbers are indexed
+// by the uniqueness constraint.
+//
+// Examples:
+//
+// null                      -> allowed many times
+// INV-20261004-AAAA1111     -> unique
+// INV-20261004-BBBB2222     -> unique
+//
+// A duplicate real invoice number is rejected.
+// ======================================================
+
+placementBillingSchema.index(
+  {
+    invoiceNumber: 1,
+  },
+  {
+    name: "invoiceNumber_1",
+    unique: true,
+
+    partialFilterExpression: {
+      invoiceNumber: {
+        $type: "string",
+      },
+    },
   },
 );
 

@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "migrate:placement-billing-invoice-index": "node scripts/migratePlacementBillingInvoiceIndex.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
