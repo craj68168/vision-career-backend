@@ -178,9 +178,13 @@ exports.updateRecruit = async (req, res) => {
     // for resubmission.
     if (recruit.status === "rejected") {
       recruit.rejection_reason = null;
-      recruit.reviewed_at = null;
-    }
 
+      recruit.reviewed_at = null;
+
+      recruit.reviewed_by_role = null;
+
+      recruit.reviewed_by_id = null;
+    }
     await recruit.save();
 
     return res.status(200).json({
@@ -240,6 +244,11 @@ exports.submitRecruit = async (req, res) => {
     recruit.submitted_at = new Date();
 
     recruit.reviewed_at = null;
+
+    recruit.reviewed_by_role = null;
+
+    recruit.reviewed_by_id = null;
+
     recruit.rejection_reason = null;
     // ======================================================
     // RESET STAFF SCREENING ON NEW SUBMISSION
