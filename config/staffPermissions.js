@@ -1,19 +1,22 @@
 // ======================================================
 // AUTOMATIC STAFF ACCESS
 //
-// Automatically available to every authenticated,
-// active Staff account.
+// These permissions are automatically available to every
+// authenticated active Staff account.
 //
-// These values remain recognized so existing Staff
-// documents containing them remain valid.
+// They are recognized permissions so old Staff records
+// containing them remain valid.
 //
-// They are not assignable from the Admin Staff form.
+// They are NOT shown in the Admin permission assignment UI.
 // ======================================================
 
 const AUTOMATIC_STAFF_PERMISSIONS = ["dashboard:view", "training:view"];
 
 // ======================================================
 // ASSIGNABLE STAFF PERMISSIONS
+//
+// These are the permissions that Admin can explicitly
+// assign or remove.
 // ======================================================
 
 const ASSIGNABLE_STAFF_PERMISSIONS = [
@@ -27,10 +30,8 @@ const ASSIGNABLE_STAFF_PERMISSIONS = [
   // SCREENED / NEEDS_ATTENTION
   "vacancies:review",
 
-  // Vacancy decision:
+  // Final vacancy decision:
   // APPROVE / REJECT
-  //
-  // This does NOT allow publishing or closing.
   "vacancies:approval",
 
   // ==================================================
@@ -38,7 +39,14 @@ const ASSIGNABLE_STAFF_PERMISSIONS = [
   // ==================================================
 
   "applications:view",
+
+  // Staff screening:
+  // SCREENED / NEEDS_ATTENTION
   "applications:review",
+
+  // Final application decision:
+  // APPROVE / REJECT
+  "applications:approval",
 
   // ==================================================
   // INTERVIEWS
@@ -60,7 +68,7 @@ const ASSIGNABLE_STAFF_PERMISSIONS = [
 
   "seekers:view",
 
-  // Staff screening:
+  // Screening:
   // SCREENED / NEEDS_ATTENTION
   "seekers:manage",
 
@@ -87,6 +95,9 @@ const ASSIGNABLE_STAFF_PERMISSIONS = [
   // STAFF TRAINING MANAGEMENT
   //
   // training:view is automatic.
+  //
+  // training:manage remains assignable for any current
+  // or future management functionality.
   // ==================================================
 
   "training:manage",
@@ -94,6 +105,11 @@ const ASSIGNABLE_STAFF_PERMISSIONS = [
 
 // ======================================================
 // ALL RECOGNIZED PERMISSIONS
+//
+// Used by Mongoose schema validation.
+//
+// Automatic legacy permissions remain here so existing
+// Staff documents remain valid.
 // ======================================================
 
 const STAFF_PERMISSIONS = [
@@ -104,9 +120,16 @@ const STAFF_PERMISSIONS = [
 // ======================================================
 // EFFECTIVE STAFF PERMISSIONS
 //
-// Stored permissions
-// +
+// MongoDB stores only explicitly assigned permissions.
+//
+// At runtime we combine:
+//
 // automatic permissions
+// +
+// valid stored permissions
+//
+// This means Dashboard and Training work automatically
+// without storing them in every Staff document.
 // ======================================================
 
 const getEffectiveStaffPermissions = (permissions = []) => {

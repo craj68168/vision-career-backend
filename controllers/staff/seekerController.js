@@ -416,42 +416,57 @@ exports.getStaffSeekers = async (req, res) => {
 
     const [
       seekers,
-
       filteredCount,
-
       total,
-
       pendingApproval,
-
       notScreened,
-
       screened,
-
       needsAttention,
     ] = await Promise.all([
-      Seeker.find(filter)
+      // ==================================================
+      // FILTERED SEEKER LIST
+      // ==================================================
 
+      Seeker.find(filter)
         .sort({
           created_at: -1,
         })
-
         .skip((currentPage - 1) * pageLimit)
-
         .limit(pageLimit)
-
         .lean(),
+
+      // ==================================================
+      // FILTERED RESULT COUNT
+      // ==================================================
 
       Seeker.countDocuments(filter),
 
+      // ==================================================
+      // TOTAL JOB SEEKERS
+      // ==================================================
+
       Seeker.countDocuments(),
+
+      // ==================================================
+      // PENDING REGISTRATION APPROVAL
+      //
+      // Only registrations still awaiting a decision.
+      // ==================================================
 
       Seeker.countDocuments({
         approval_status: "pending",
       }),
 
-      Seeker.countDocuments({
-        approval_status: "pending",
+      // ==================================================
+      // NOT SCREENED
+      //
+      // Screening is independent from approval status.
+      //
+      // Include legacy records where the field does not
+      // exist or is null.
+      // ==================================================
 
+      Seeker.countDocuments({
         $or: [
           {
             staff_screening_status: "NOT_SCREENED",
@@ -469,15 +484,23 @@ exports.getStaffSeekers = async (req, res) => {
         ],
       }),
 
-      Seeker.countDocuments({
-        approval_status: "pending",
+      // ==================================================
+      // SCREENED
+      //
+      // Count regardless of approved/rejected/pending.
+      // ==================================================
 
+      Seeker.countDocuments({
         staff_screening_status: "SCREENED",
       }),
 
-      Seeker.countDocuments({
-        approval_status: "pending",
+      // ==================================================
+      // NEEDS ATTENTION
+      //
+      // Count regardless of approved/rejected/pending.
+      // ==================================================
 
+      Seeker.countDocuments({
         staff_screening_status: "NEEDS_ATTENTION",
       }),
     ]);

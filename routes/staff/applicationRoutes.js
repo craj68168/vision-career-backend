@@ -6,12 +6,11 @@ const requireStaffPermission = require("../../middleware/requireStaffPermission"
 
 const {
   getApplications,
-
   getApplicationById,
-
   getStaffApplicationResume,
-
   screenApplication,
+  approveStaffApplication,
+  rejectStaffApplication,
 } = require("../../controllers/staff/applicationController");
 
 const router = express.Router();
@@ -53,27 +52,15 @@ router.get(
 );
 
 // ======================================================
-// APPLICATION DETAILS
-//
-// Permission:
-// applications:view
-// ======================================================
-
-router.get(
-  "/:applicationId",
-
-  staffAuth,
-
-  requireStaffPermission("applications:view"),
-
-  getApplicationById,
-);
-
-// ======================================================
 // SCREEN APPLICATION
 //
 // Permission:
 // applications:review
+//
+// Staff screening:
+// SCREENED / NEEDS_ATTENTION
+//
+// Screening is independent from approval.
 // ======================================================
 
 router.patch(
@@ -84,6 +71,67 @@ router.patch(
   requireStaffPermission("applications:review"),
 
   screenApplication,
+);
+
+// ======================================================
+// APPROVE APPLICATION
+//
+// Permission:
+// applications:approval
+//
+// PENDING_ADMIN_APPROVAL
+// ->
+// SENT_TO_PROVIDER
+// ======================================================
+
+router.patch(
+  "/:applicationId/approve",
+
+  staffAuth,
+
+  requireStaffPermission("applications:approval"),
+
+  approveStaffApplication,
+);
+
+// ======================================================
+// REJECT APPLICATION
+//
+// Permission:
+// applications:approval
+//
+// PENDING_ADMIN_APPROVAL
+// ->
+// ADMIN_REJECTED
+// ======================================================
+
+router.patch(
+  "/:applicationId/reject",
+
+  staffAuth,
+
+  requireStaffPermission("applications:approval"),
+
+  rejectStaffApplication,
+);
+
+// ======================================================
+// APPLICATION DETAILS
+//
+// Permission:
+// applications:view
+//
+// Keep after action routes.
+// ======================================================
+
+router.get(
+  "/:applicationId",
+
+  staffAuth,
+
+  requireStaffPermission("applications:view"),
+
+  getApplicationById,
 );
 
 module.exports = router;
