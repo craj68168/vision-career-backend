@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 
 const Staff = require("../models/admin/staffSchema");
+const { getEffectiveStaffPermissions } = require("../config/staffPermissions");
 
 // ======================================================
 // STAFF AUTH
@@ -143,7 +144,7 @@ const staffAuth = async (req, res, next) => {
 
       role: "staff",
 
-      permissions: staff.permissions || [],
+      permissions: getEffectiveStaffPermissions(staff.permissions),
     };
 
     return next();

@@ -2,19 +2,21 @@ const express = require("express");
 
 const staffAuth = require("../../middleware/staffAuth");
 
-const requireStaffPermission = require("../../middleware/requireStaffPermission");
-
 const {
   getStaffDashboard,
 } = require("../../controllers/staff/dashboardController");
 
 const router = express.Router();
 
-router.get(
-  "/",
-  staffAuth,
-  requireStaffPermission("dashboard:view"),
-  getStaffDashboard,
-);
+// ======================================================
+// STAFF DASHBOARD
+//
+// Every authenticated Staff account can access the
+// Dashboard.
+//
+// dashboard:view is no longer required.
+// ======================================================
+
+router.get("/", staffAuth, getStaffDashboard);
 
 module.exports = router;

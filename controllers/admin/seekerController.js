@@ -1,19 +1,27 @@
 const bcrypt = require("bcryptjs");
+
 const crypto = require("crypto");
+
 const fs = require("fs");
+
 const path = require("path");
 
 const Seeker = require("../../models/seekers/seekerSchema");
+
 const Application = require("../../models/applications/applicationSchema");
 
 const {
   deleteFileReferences,
+
   isStorageReference,
+
   resolveFileReference,
 } = require("../../utils/storageReference");
 
 // ======================================================
+
 // CONSTANTS
+
 // ======================================================
 
 const APPROVAL_STATUSES = ["pending", "approved", "rejected"];
@@ -22,14 +30,20 @@ const ACCOUNT_STATUSES = ["inactive", "active", "suspended"];
 
 const PLACEMENT_STATUSES = [
   "unplaced",
+
   "matching",
+
   "interview",
+
   "selected",
+
   "placed",
 ];
 
 // ======================================================
+
 // ESCAPE REGEX
+
 // ======================================================
 
 const escapeRegex = (value = "") => {
@@ -37,14 +51,19 @@ const escapeRegex = (value = "") => {
 };
 
 // ======================================================
+
 // GENERATE UNIQUE SEEKER ID
+
 // ======================================================
 
 const generateUniqueSeekerId = async () => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const seekerId = `SKR-${crypto
+
       .randomBytes(4)
+
       .toString("hex")
+
       .toUpperCase()}`;
 
     const exists = await Seeker.exists({
@@ -60,7 +79,9 @@ const generateUniqueSeekerId = async () => {
 };
 
 // ======================================================
+
 // RESOLVE OTHER DOCUMENTS
+
 // ======================================================
 
 const resolveOtherDocuments = async (documents = []) => {
@@ -87,7 +108,63 @@ const resolveOtherDocuments = async (documents = []) => {
 };
 
 // ======================================================
+
+// APPROVAL REVIEW SERIALIZER
+
+// ======================================================
+
+const serializeApprovalReview = (seeker) => ({
+  reviewedAt: seeker.approval_reviewed_at || null,
+
+  reviewedByType: seeker.approval_reviewed_by_type || null,
+
+  reviewedById: seeker.approval_reviewed_by_id || null,
+
+  reviewedByName: seeker.approval_reviewed_by_name || null,
+});
+
+// ======================================================
+
+// APPROVAL HISTORY SERIALIZER
+
+// ======================================================
+
+const serializeApprovalHistory = (seeker) => {
+  const history = Array.isArray(seeker.approval_history)
+    ? seeker.approval_history
+    : [];
+
+  return history
+
+    .map((entry) => ({
+      id: entry._id ? String(entry._id) : null,
+
+      decision: entry.decision,
+
+      actorType: entry.actor_type,
+
+      actorId: entry.actor_id,
+
+      actorName: entry.actor_name || null,
+
+      reason: entry.reason || null,
+
+      reviewedAt: entry.reviewed_at || null,
+    }))
+
+    .sort((a, b) => {
+      const aTime = a.reviewedAt ? new Date(a.reviewedAt).getTime() : 0;
+
+      const bTime = b.reviewedAt ? new Date(b.reviewedAt).getTime() : 0;
+
+      return bTime - aTime;
+    });
+};
+
+// ======================================================
+
 // ADMIN SEEKER SERIALIZER
+
 // ======================================================
 
 const serializeSeeker = async (seeker, applicationsCount = 0) => {
@@ -99,7 +176,9 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
         };
 
   // ==================================================
+
   // STAFF SCREENING
+
   // ==================================================
 
   const staffScreening = {
@@ -113,7 +192,9 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
   };
 
   // ==================================================
+
   // PRIVATE STORAGE
+
   // ==================================================
 
   item.profile_photo = await resolveFileReference(item.profile_photo, 3600);
@@ -122,13 +203,16 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
 
   item.generated_resume_file = await resolveFileReference(
     item.generated_resume_file,
+
     3600,
   );
 
   item.other_documents = await resolveOtherDocuments(item.other_documents);
 
   // ==================================================
+
   // REMOVE INTERNAL FIELDS
+
   // ==================================================
 
   delete item.password;
@@ -154,7 +238,9 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
   delete item.screened_at;
 
   // ==================================================
+
   // RESPONSE
+
   // ==================================================
 
   return {
@@ -163,23 +249,36 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
     applications_count: applicationsCount,
 
     staffScreening,
+
+    approvalReview: serializeApprovalReview(item),
+
+    approvalHistory: serializeApprovalHistory(item),
   };
 };
 
 // ======================================================
+
 // GET ALL SEEKERS
+
 //
+
 // GET /api/admin/seekers
+
 // ======================================================
 
 exports.getSeekers = async (req, res) => {
   try {
     const {
       search = "",
+
       approvalStatus = "",
+
       accountStatus = "",
+
       placementStatus = "",
+
       page = "1",
+
       limit = "20",
     } = req.query;
 
@@ -187,13 +286,16 @@ exports.getSeekers = async (req, res) => {
 
     const pageLimit = Math.min(
       Math.max(Number.parseInt(limit, 10) || 20, 1),
+
       100,
     );
 
     const filter = {};
 
     // ==================================================
+
     // SEARCH
+
     // ==================================================
 
     if (search.trim()) {
@@ -229,7 +331,9 @@ exports.getSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // APPROVAL FILTER
+
     // ==================================================
 
     if (approvalStatus && APPROVAL_STATUSES.includes(approvalStatus)) {
@@ -237,7 +341,9 @@ exports.getSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // ACCOUNT FILTER
+
     // ==================================================
 
     if (accountStatus && ACCOUNT_STATUSES.includes(accountStatus)) {
@@ -245,7 +351,9 @@ exports.getSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // PLACEMENT FILTER
+
     // ==================================================
 
     if (placementStatus && PLACEMENT_STATUSES.includes(placementStatus)) {
@@ -253,27 +361,38 @@ exports.getSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // QUERY
+
     // ==================================================
 
     const [
       seekers,
+
       filteredCount,
 
       total,
+
       active,
+
       inactive,
+
       suspended,
 
       pendingApproval,
+
       approved,
+
       rejected,
     ] = await Promise.all([
       Seeker.find(filter)
+
         .sort({
           created_at: -1,
         })
+
         .skip((currentPage - 1) * pageLimit)
+
         .limit(pageLimit),
 
       Seeker.countDocuments(filter),
@@ -306,7 +425,9 @@ exports.getSeekers = async (req, res) => {
     ]);
 
     // ==================================================
+
     // APPLICATION COUNTS
+
     // ==================================================
 
     const seekerIds = seekers.map((seeker) => seeker.seeker_id);
@@ -342,7 +463,9 @@ exports.getSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // SERIALIZE
+
     // ==================================================
 
     const data = await Promise.all(
@@ -362,8 +485,11 @@ exports.getSeekers = async (req, res) => {
 
       summary: {
         total,
+
         active,
+
         inactive,
+
         suspended,
 
         approval: {
@@ -399,9 +525,13 @@ exports.getSeekers = async (req, res) => {
 };
 
 // ======================================================
+
 // GET ONE SEEKER
+
 //
+
 // GET /api/admin/seekers/:seekerId
+
 // ======================================================
 
 exports.getSeekerById = async (req, res) => {
@@ -441,16 +571,22 @@ exports.getSeekerById = async (req, res) => {
 };
 
 // ======================================================
+
 // CREATE SEEKER BY ADMIN
+
 //
+
 // POST /api/admin/seekers
+
 // ======================================================
 
 exports.createSeeker = async (req, res) => {
   try {
     const {
       name,
+
       email,
+
       password,
 
       phone = null,
@@ -467,7 +603,9 @@ exports.createSeeker = async (req, res) => {
     } = req.body;
 
     // ==================================================
+
     // REQUIRED
+
     // ==================================================
 
     if (!name || !email || !password) {
@@ -535,7 +673,9 @@ exports.createSeeker = async (req, res) => {
     }
 
     // ==================================================
+
     // ACCOUNT CONSISTENCY
+
     // ==================================================
 
     let finalAccountStatus = account_status;
@@ -545,7 +685,9 @@ exports.createSeeker = async (req, res) => {
     }
 
     // ==================================================
+
     // PASSWORD
+
     // ==================================================
 
     const salt = await bcrypt.genSalt(12);
@@ -555,7 +697,9 @@ exports.createSeeker = async (req, res) => {
     const seekerId = await generateUniqueSeekerId();
 
     // ==================================================
+
     // CREATE
+
     // ==================================================
 
     const seeker = await Seeker.create({
@@ -623,9 +767,13 @@ exports.createSeeker = async (req, res) => {
 };
 
 // ======================================================
+
 // UPDATE SEEKER PROFILE
+
 //
+
 // PATCH /api/admin/seekers/:seekerId
+
 // ======================================================
 
 exports.updateSeeker = async (req, res) => {
@@ -645,7 +793,9 @@ exports.updateSeeker = async (req, res) => {
     }
 
     // ==================================================
+
     // EMAIL
+
     // ==================================================
 
     if (req.body.email !== undefined) {
@@ -681,23 +831,38 @@ exports.updateSeeker = async (req, res) => {
     }
 
     // ==================================================
+
     // NORMAL EDITABLE FIELDS
+
     // ==================================================
 
     const allowedFields = [
       "name",
+
       "phone",
+
       "address",
+
       "current_location",
+
       "date_of_birth",
+
       "gender",
+
       "nationality",
+
       "visa_type",
+
       "visa_expiry_date",
+
       "japanese_level",
+
       "desired_job",
+
       "desired_location",
+
       "available_from",
+
       "notes",
     ];
 
@@ -708,7 +873,9 @@ exports.updateSeeker = async (req, res) => {
     });
 
     // ==================================================
+
     // SKILLS
+
     // ==================================================
 
     if (req.body.skills !== undefined) {
@@ -756,9 +923,13 @@ exports.updateSeeker = async (req, res) => {
 };
 
 // ======================================================
+
 // APPROVE / REJECT SEEKER
+
 //
+
 // PATCH /api/admin/seekers/:seekerId/approval
+
 // ======================================================
 
 exports.updateApprovalStatus = async (req, res) => {
@@ -766,6 +937,10 @@ exports.updateApprovalStatus = async (req, res) => {
     const { seekerId } = req.params;
 
     const { decision, reason = null } = req.body;
+
+    // ==================================================
+    // DECISION
+    // ==================================================
 
     if (!["approved", "rejected"].includes(decision)) {
       return res.status(400).json({
@@ -775,13 +950,31 @@ exports.updateApprovalStatus = async (req, res) => {
       });
     }
 
-    if (decision === "rejected" && (!reason || !String(reason).trim())) {
+    // ==================================================
+    // REJECTION REASON
+    // ==================================================
+
+    const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+    if (decision === "rejected" && !normalizedReason) {
       return res.status(400).json({
         success: false,
 
         message: "Rejection reason is required.",
       });
     }
+
+    if (normalizedReason.length > 2000) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason cannot exceed 2000 characters.",
+      });
+    }
+
+    // ==================================================
+    // SEEKER
+    // ==================================================
 
     const seeker = await Seeker.findOne({
       seeker_id: seekerId,
@@ -795,25 +988,30 @@ exports.updateApprovalStatus = async (req, res) => {
       });
     }
 
-    seeker.approval_status = decision;
+    // ==================================================
+    // RECORD DECISION + AUDIT HISTORY
+    //
+    // Admin may correct an existing final decision.
+    // Each correction is appended to approval_history.
+    // ==================================================
 
-    seeker.approval_reviewed_at = new Date();
+    seeker.recordApprovalDecision({
+      decision,
 
-    if (decision === "approved") {
-      seeker.rejection_reason = null;
+      actorType: "admin",
 
-      if (seeker.account_status !== "suspended") {
-        seeker.account_status = "active";
-      }
-    }
+      actorId: req.admin.adminId,
 
-    if (decision === "rejected") {
-      seeker.rejection_reason = String(reason).trim();
+      actorName: req.admin.username,
 
-      seeker.account_status = "inactive";
-    }
+      reason: normalizedReason,
+    });
 
     await seeker.save();
+
+    const applicationsCount = await Application.countDocuments({
+      seeker_id: seekerId,
+    });
 
     return res.status(200).json({
       success: true,
@@ -823,7 +1021,7 @@ exports.updateApprovalStatus = async (req, res) => {
           ? "Job seeker approved successfully."
           : "Job seeker rejected successfully.",
 
-      data: await serializeSeeker(seeker),
+      data: await serializeSeeker(seeker, applicationsCount),
     });
   } catch (error) {
     console.error("UPDATE SEEKER APPROVAL ERROR:", error);
@@ -837,9 +1035,13 @@ exports.updateApprovalStatus = async (req, res) => {
 };
 
 // ======================================================
+
 // UPDATE ACCOUNT STATUS
+
 //
+
 // PATCH /api/admin/seekers/:seekerId/account-status
+
 // ======================================================
 
 exports.updateAccountStatus = async (req, res) => {
@@ -899,9 +1101,13 @@ exports.updateAccountStatus = async (req, res) => {
 };
 
 // ======================================================
+
 // UPDATE PLACEMENT STATUS
+
 //
+
 // PATCH /api/admin/seekers/:seekerId/placement-status
+
 // ======================================================
 
 exports.updatePlacementStatus = async (req, res) => {
@@ -953,9 +1159,13 @@ exports.updatePlacementStatus = async (req, res) => {
 };
 
 // ======================================================
+
 // ADMIN DOWNLOAD SEEKER RESUME
+
 //
+
 // GET /api/admin/seekers/:seekerId/resume
+
 // ======================================================
 
 exports.getSeekerResume = async (req, res) => {
@@ -985,7 +1195,9 @@ exports.getSeekerResume = async (req, res) => {
     }
 
     // ==================================================
+
     // SUPABASE STORAGE
+
     // ==================================================
 
     if (isStorageReference(resumeUrl)) {
@@ -1003,7 +1215,9 @@ exports.getSeekerResume = async (req, res) => {
     }
 
     // ==================================================
+
     // LEGACY LOCAL STORAGE
+
     // ==================================================
 
     const fileName = path.basename(resumeUrl);
@@ -1041,9 +1255,13 @@ exports.getSeekerResume = async (req, res) => {
 };
 
 // ======================================================
+
 // DELETE SEEKER
+
 //
+
 // DELETE /api/admin/seekers/:seekerId
+
 // ======================================================
 
 exports.deleteSeeker = async (req, res) => {
@@ -1084,7 +1302,9 @@ exports.deleteSeeker = async (req, res) => {
     }
 
     // ==================================================
+
     // FILE REFERENCES
+
     // ==================================================
 
     const filesToDelete = [
@@ -1098,18 +1318,27 @@ exports.deleteSeeker = async (req, res) => {
     ].filter(Boolean);
 
     // ==================================================
+
     // DELETE SEEKER
+
     // ==================================================
 
     await seeker.deleteOne();
 
     // ==================================================
+
     // DELETE FILES
+
     //
+
     // Supports:
+
     // storage://...
+
     // /uploads/...
+
     // /private_uploads/...
+
     // ==================================================
 
     await deleteFileReferences(filesToDelete);

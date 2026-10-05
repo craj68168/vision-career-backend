@@ -2,6 +2,9 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const Staff = require("../../models/admin/staffSchema");
+const {
+  getEffectiveStaffPermissions,
+} = require("../../config/staffPermissions");
 
 // ======================================================
 // SERIALIZER
@@ -20,7 +23,7 @@ const serializeStaff = (staff) => ({
 
   status: staff.status,
 
-  permissions: staff.permissions || [],
+  permissions: getEffectiveStaffPermissions(staff.permissions),
 
   lastLoginAt: staff.lastLoginAt,
 

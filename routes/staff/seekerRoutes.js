@@ -8,6 +8,7 @@ const {
   getStaffSeekers,
   getStaffSeekerById,
   screenStaffSeeker,
+  updateStaffSeekerApproval,
   getStaffSeekerResume,
 } = require("../../controllers/staff/seekerController");
 
@@ -39,6 +40,13 @@ router.get(
 
 // ======================================================
 // SCREEN
+//
+// seekers:manage
+//
+// Screening:
+// SCREENED / NEEDS_ATTENTION
+//
+// Screening is separate from final approval.
 // ======================================================
 
 router.patch(
@@ -46,6 +54,19 @@ router.patch(
   staffAuth,
   requireStaffPermission("seekers:manage"),
   screenStaffSeeker,
+);
+
+// ======================================================
+// APPROVE / REJECT
+//
+// seekers:approval
+// ======================================================
+
+router.patch(
+  "/:seekerId/approval",
+  staffAuth,
+  requireStaffPermission("seekers:approval"),
+  updateStaffSeekerApproval,
 );
 
 // ======================================================
