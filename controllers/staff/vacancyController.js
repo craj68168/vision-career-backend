@@ -18,10 +18,10 @@ const serializeScreening = (vacancy) => ({
 // VACANCY SERIALIZER
 //
 // Staff receives business information required for
-// screening.
+// screening and delegated vacancy decisions.
 //
 // Provider private contact fields are intentionally not
-// included here.
+// included.
 // ======================================================
 
 const serializeVacancy = (vacancy) => ({
@@ -202,13 +202,15 @@ exports.getStaffVacancyById = async (req, res) => {
 //
 // PATCH /api/staff/vacancies/:vacancyId/screen
 //
-// Staff DOES NOT:
-// - approve
-// - reject
-// - publish
-// - close
+// Requires:
+// vacancies:review
 //
-// Staff only adds screening information.
+// IMPORTANT:
+//
+// This endpoint performs screening only.
+//
+// Approval / rejection is handled separately through
+// vacancies:approval.
 // ======================================================
 
 exports.screenVacancy = async (req, res) => {
@@ -274,7 +276,7 @@ exports.screenVacancy = async (req, res) => {
       return res.status(409).json({
         success: false,
 
-        message: "Only vacancies waiting for Admin review can be screened.",
+        message: "Only vacancies waiting for review can be screened.",
       });
     }
 
@@ -298,7 +300,7 @@ exports.screenVacancy = async (req, res) => {
       message:
         screeningStatus === "SCREENED"
           ? "Vacancy screening completed."
-          : "Vacancy marked as needing Admin attention.",
+          : "Vacancy marked as needing attention.",
 
       data: serializeVacancy(vacancy),
     });
@@ -309,6 +311,186 @@ exports.screenVacancy = async (req, res) => {
       success: false,
 
       message: "Failed to screen vacancy.",
+    });
+  }
+};
+
+// ======================================================
+// APPROVE VACANCY
+//
+// PATCH /api/staff/vacancies/:vacancyId/approve
+//
+// Requires:
+// vacancies:approval
+//
+// Workflow:
+//
+// pending_review -> approved
+//
+// IMPORTANT:
+//
+// Approval does NOT publish the vacancy.
+//
+// Publishing remains Admin controlled.
+// ======================================================
+
+exports.approveStaffVacancy = async (req, res) => {
+  try {
+    const { vacancyId } = req.params;
+
+    const vacancy = await Vacancy.findOne({
+      vacancyId,
+    });
+
+    if (!vacancy) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Vacancy not found.",
+      });
+    }
+
+    // ==================================================
+    // STATUS
+    // ==================================================
+
+    if (vacancy.status !== "pending_review") {
+      return res.status(409).json({
+        success: false,
+
+        message: "Only vacancies pending review can be approved.",
+      });
+    }
+
+    // ==================================================
+    // APPROVE
+    // ==================================================
+
+    vacancy.status = "approved";
+
+    // Approval and publication remain separate steps.
+    vacancy.isPublished = false;
+
+    vacancy.reviewedAt = new Date();
+
+    vacancy.rejectionReason = null;
+
+    await vacancy.save();
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Vacancy approved successfully.",
+
+      data: serializeVacancy(vacancy),
+    });
+  } catch (error) {
+    console.error("APPROVE STAFF VACANCY ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to approve vacancy.",
+    });
+  }
+};
+
+// ======================================================
+// REJECT VACANCY
+//
+// PATCH /api/staff/vacancies/:vacancyId/reject
+//
+// Requires:
+// vacancies:approval
+//
+// Workflow:
+//
+// pending_review -> rejected
+// ======================================================
+
+exports.rejectStaffVacancy = async (req, res) => {
+  try {
+    const { vacancyId } = req.params;
+
+    const reason =
+      typeof req.body.reason === "string" ? req.body.reason.trim() : "";
+
+    // ==================================================
+    // REJECTION REASON
+    // ==================================================
+
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason is required.",
+      });
+    }
+
+    if (reason.length > 1000) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason cannot exceed 1000 characters.",
+      });
+    }
+
+    // ==================================================
+    // FIND VACANCY
+    // ==================================================
+
+    const vacancy = await Vacancy.findOne({
+      vacancyId,
+    });
+
+    if (!vacancy) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Vacancy not found.",
+      });
+    }
+
+    // ==================================================
+    // STATUS
+    // ==================================================
+
+    if (vacancy.status !== "pending_review") {
+      return res.status(409).json({
+        success: false,
+
+        message: "Only vacancies pending review can be rejected.",
+      });
+    }
+
+    // ==================================================
+    // REJECT
+    // ==================================================
+
+    vacancy.status = "rejected";
+
+    vacancy.isPublished = false;
+
+    vacancy.reviewedAt = new Date();
+
+    vacancy.rejectionReason = reason;
+
+    await vacancy.save();
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Vacancy rejected.",
+
+      data: serializeVacancy(vacancy),
+    });
+  } catch (error) {
+    console.error("REJECT STAFF VACANCY ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to reject vacancy.",
     });
   }
 };
