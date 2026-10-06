@@ -6,80 +6,38 @@ const { uploadMulterFile } = require("../../services/storageService");
 
 const {
   createStorageReference,
+
   resolveFileReference,
+
   deleteFileReferences,
 } = require("../../utils/storageReference");
 
-// ======================================================
-// REQUIRED PROFILE FIELDS
-// ======================================================
+const {
+  calculateProfileCompletion,
 
-const REQUIRED_PROFILE_FIELDS = [
-  {
-    field: "phone",
-    label: "Phone Number",
-  },
-
-  {
-    field: "address",
-    label: "Address",
-  },
-
-  {
-    field: "nationality",
-    label: "Nationality",
-  },
-
-  {
-    field: "visa_type",
-    label: "Visa Type",
-  },
-
-  {
-    field: "japanese_level",
-    label: "Japanese Level",
-  },
-
-  {
-    field: "desired_job",
-    label: "Desired Job",
-  },
-
-  {
-    field: "desired_location",
-    label: "Desired Location",
-  },
-
-  {
-    field: "available_from",
-    label: "Available From",
-  },
-
-  {
-    field: "resume_file",
-    label: "Resume File",
-  },
-
-  {
-    field: "education",
-    label: "Educational Background",
-  },
-];
+  calculatePlacementEligibility,
+} = require("../../utils/seekerProfileStatus");
 
 // ======================================================
+
 // PROFILE PHOTO FILE RULES
+
 // ======================================================
 
 const PROFILE_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
 const PROFILE_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
+
   "image/png",
+
   "image/webp",
 ]);
 
 // ======================================================
+
 // RESUME FILE RULES
+
 // ======================================================
 
 const RESUME_EXTENSIONS = new Set([".pdf", ".doc", ".docx"]);
@@ -93,27 +51,42 @@ const RESUME_MIME_TYPES = new Set([
 ]);
 
 // ======================================================
+
 // OTHER DOCUMENT FILE RULES
+
 //
+
 // Preserves the file types supported by the previous
+
 // Multer upload middleware.
+
 // ======================================================
 
 const DOCUMENT_EXTENSIONS = new Set([
   ".jpg",
+
   ".jpeg",
+
   ".png",
+
   ".gif",
+
   ".webp",
+
   ".pdf",
+
   ".doc",
+
   ".docx",
 ]);
 
 const DOCUMENT_MIME_TYPES = new Set([
   "image/jpeg",
+
   "image/png",
+
   "image/gif",
+
   "image/webp",
 
   "application/pdf",
@@ -124,53 +97,9 @@ const DOCUMENT_MIME_TYPES = new Set([
 ]);
 
 // ======================================================
-// CALCULATE PROFILE COMPLETION
-// ======================================================
 
-const calculateProfileCompletion = (seeker) => {
-  const missingFields = [];
-
-  REQUIRED_PROFILE_FIELDS.forEach(({ field, label }) => {
-    if (field === "education") {
-      if (!Array.isArray(seeker.education) || seeker.education.length === 0) {
-        missingFields.push({
-          field,
-          label,
-        });
-      }
-
-      return;
-    }
-
-    const value = seeker[field];
-
-    if (value === undefined || value === null || value === "") {
-      missingFields.push({
-        field,
-        label,
-      });
-    }
-  });
-
-  const totalFields = REQUIRED_PROFILE_FIELDS.length;
-
-  const completedFields = totalFields - missingFields.length;
-
-  const completionPercentage = Math.round(
-    (completedFields / totalFields) * 100,
-  );
-
-  return {
-    isComplete: missingFields.length === 0,
-
-    completionPercentage,
-
-    missingFields,
-  };
-};
-
-// ======================================================
 // RESOLVE OTHER DOCUMENT URLS
+
 // ======================================================
 
 const resolveOtherDocuments = async (documents) => {
@@ -188,6 +117,7 @@ const resolveOtherDocuments = async (documents) => {
 
       documentObject.file_url = await resolveFileReference(
         documentObject.file_url,
+
         3600,
       );
 
@@ -197,7 +127,9 @@ const resolveOtherDocuments = async (documents) => {
 };
 
 // ======================================================
+
 // FORMAT PROFILE RESPONSE
+
 // ======================================================
 
 const formatProfileResponse = async (seeker) => {
@@ -209,6 +141,8 @@ const formatProfileResponse = async (seeker) => {
     missingFields,
   } = calculateProfileCompletion(seeker);
 
+  const placementEligibility = calculatePlacementEligibility(seeker);
+
   const seekerObject = seeker.toObject();
 
   const education = seekerObject.education || [];
@@ -216,21 +150,26 @@ const formatProfileResponse = async (seeker) => {
   const employmentHistory = seekerObject.employment_history || [];
 
   // ==================================================
+
   // PRIVATE STORAGE URLS
+
   // ==================================================
 
   seekerObject.profile_photo = await resolveFileReference(
     seekerObject.profile_photo,
+
     3600,
   );
 
   seekerObject.resume_file = await resolveFileReference(
     seekerObject.resume_file,
+
     3600,
   );
 
   seekerObject.generated_resume_file = await resolveFileReference(
     seekerObject.generated_resume_file,
+
     3600,
   );
 
@@ -239,7 +178,9 @@ const formatProfileResponse = async (seeker) => {
   );
 
   // ==================================================
+
   // REMOVE NESTED ARRAYS FROM PROFILE OBJECT
+
   // ==================================================
 
   delete seekerObject.education;
@@ -247,7 +188,9 @@ const formatProfileResponse = async (seeker) => {
   delete seekerObject.employment_history;
 
   // ==================================================
+
   // REMOVE MONGODB INTERNAL FIELDS
+
   // ==================================================
 
   delete seekerObject._id;
@@ -257,9 +200,19 @@ const formatProfileResponse = async (seeker) => {
   return {
     is_complete: isComplete,
 
+    profile_status: isComplete ? "COMPLETE" : "INCOMPLETE",
+
     completion_percentage: completionPercentage,
 
     missing_fields: missingFields,
+
+    placement_eligible: placementEligibility.isEligible,
+
+    placement_eligibility: {
+      status: placementEligibility.status,
+
+      reasons: placementEligibility.reasons,
+    },
 
     profile: seekerObject,
 
@@ -270,7 +223,9 @@ const formatProfileResponse = async (seeker) => {
 };
 
 // ======================================================
+
 // PARSE MULTIPART JSON FIELD
+
 // ======================================================
 
 const parseJsonField = (value, fieldName) => {
@@ -294,7 +249,9 @@ const parseJsonField = (value, fieldName) => {
 };
 
 // ======================================================
+
 // VALIDATE FILE
+
 // ======================================================
 
 const validateFile = ({
@@ -325,10 +282,15 @@ const validateFile = ({
 };
 
 // ======================================================
+
 // CLEAN UP NEW STORAGE FILES
+
 //
+
 // Used when Supabase uploads succeeded but MongoDB save
+
 // later fails.
+
 // ======================================================
 
 const cleanupNewStorageFiles = async (storageReferences) => {
@@ -340,9 +302,13 @@ const cleanupNewStorageFiles = async (storageReferences) => {
 };
 
 // ======================================================
+
 // GET LOGGED-IN SEEKER PROFILE
+
 //
+
 // GET /api/seekers/profile
+
 // ======================================================
 
 exports.getProfile = async (req, res) => {
@@ -380,17 +346,26 @@ exports.getProfile = async (req, res) => {
 };
 
 // ======================================================
+
 // UPDATE COMPLETE SEEKER PROFILE
+
 //
+
 // PATCH /api/seekers/profile
+
 // ======================================================
 
 exports.updateProfile = async (req, res) => {
   // ==================================================
+
   // TRACK NEW STORAGE FILES
+
   //
+
   // If anything fails before MongoDB save completes,
+
   // these files are removed from Supabase.
+
   // ==================================================
 
   const newStorageReferences = [];
@@ -399,7 +374,9 @@ exports.updateProfile = async (req, res) => {
     const seekerId = req.user.seeker_id;
 
     // =================================================
+
     // FIND SEEKER
+
     // =================================================
 
     const seeker = await Seeker.findOne({
@@ -415,23 +392,38 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // NORMAL EDITABLE FIELDS
+
     // =================================================
 
     const allowedFields = [
       "name",
+
       "phone",
+
       "address",
+
       "current_location",
+
       "date_of_birth",
+
       "gender",
+
       "nationality",
+
       "visa_type",
+
       "visa_expiry_date",
+
       "japanese_level",
+
       "desired_job",
+
       "desired_location",
+
       "available_from",
+
       "notes",
     ];
 
@@ -442,7 +434,9 @@ exports.updateProfile = async (req, res) => {
     });
 
     // =================================================
+
     // SKILLS
+
     // =================================================
 
     if (req.body.skills !== undefined) {
@@ -464,7 +458,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // EDUCATION
+
     // =================================================
 
     if (req.body.education !== undefined) {
@@ -486,7 +482,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // EMPLOYMENT HISTORY
+
     // =================================================
 
     if (req.body.employment_history !== undefined) {
@@ -508,7 +506,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // GET UPLOADED FILES
+
     // =================================================
 
     const profilePhoto = req.files?.profile_photo?.[0];
@@ -518,7 +518,9 @@ exports.updateProfile = async (req, res) => {
     const otherDocumentFiles = req.files?.other_documents || [];
 
     // =================================================
+
     // VALIDATE PROFILE PHOTO
+
     // =================================================
 
     validateFile({
@@ -532,7 +534,9 @@ exports.updateProfile = async (req, res) => {
     });
 
     // =================================================
+
     // VALIDATE RESUME
+
     // =================================================
 
     validateFile({
@@ -546,7 +550,9 @@ exports.updateProfile = async (req, res) => {
     });
 
     // =================================================
+
     // VALIDATE OTHER DOCUMENT FILES
+
     // =================================================
 
     otherDocumentFiles.forEach((file) => {
@@ -563,7 +569,9 @@ exports.updateProfile = async (req, res) => {
     });
 
     // =================================================
+
     // OTHER DOCUMENT METADATA
+
     // =================================================
 
     let documentMeta = [];
@@ -596,7 +604,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // DOCUMENTS TO DELETE AFTER SUCCESSFUL SAVE
+
     // =================================================
 
     const documentsToDelete = [];
@@ -606,7 +616,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // REMOVE EXISTING DOCUMENTS
+
     // =================================================
 
     if (req.body.remove_document_ids !== undefined) {
@@ -636,7 +648,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // CHECK WHETHER ANYTHING WAS PROVIDED
+
     // =================================================
 
     const hasBodyFields = Object.keys(req.body).length > 0;
@@ -654,7 +668,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // PREVIOUS FILE REFERENCES
+
     // =================================================
 
     let previousProfilePhoto = null;
@@ -662,7 +678,9 @@ exports.updateProfile = async (req, res) => {
     let previousResume = null;
 
     // =================================================
+
     // UPLOAD PROFILE PHOTO
+
     // =================================================
 
     if (profilePhoto) {
@@ -682,7 +700,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // UPLOAD RESUME
+
     // =================================================
 
     if (resume) {
@@ -702,7 +722,9 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // UPLOAD OTHER DOCUMENTS
+
     // =================================================
 
     for (let index = 0; index < otherDocumentFiles.length; index += 1) {
@@ -730,27 +752,41 @@ exports.updateProfile = async (req, res) => {
     }
 
     // =================================================
+
     // SAVE MONGODB
+
     // =================================================
 
     await seeker.save();
 
     // =================================================
+
     // DATABASE SAVE SUCCEEDED
+
     //
+
     // New storage files are now permanent.
+
     // Do not clean them up in catch.
+
     // =================================================
 
     newStorageReferences.length = 0;
 
     // =================================================
+
     // DELETE REPLACED / REMOVED OLD FILES
+
     //
+
     // Supports both:
+
     //
+
     // storage://...
+
     // /uploads/...
+
     // =================================================
 
     await deleteFileReferences([
@@ -762,7 +798,9 @@ exports.updateProfile = async (req, res) => {
     ]);
 
     // =================================================
+
     // RESPONSE
+
     // =================================================
 
     const profileData = await formatProfileResponse(seeker);
@@ -778,7 +816,9 @@ exports.updateProfile = async (req, res) => {
     console.error("Update seeker profile error:", error);
 
     // =================================================
+
     // REMOVE ANY NEW SUPABASE FILES IF UPDATE FAILED
+
     // =================================================
 
     await cleanupNewStorageFiles(newStorageReferences);

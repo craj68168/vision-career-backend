@@ -4,79 +4,161 @@ const adminAuth = require("../../middleware/adminAuth");
 
 const {
   getSeekers,
+
   getSeekerById,
-  createSeeker,
+
   updateSeeker,
-  updateApprovalStatus,
+
   updateAccountStatus,
+
   updatePlacementStatus,
+
   getSeekerResume,
+
   deleteSeeker,
 } = require("../../controllers/admin/seekerController");
+
+const {
+  createSeeker,
+
+  updateApprovalStatus,
+} = require("../../controllers/admin/seekerAccountController");
 
 const router = express.Router();
 
 // ======================================================
 // LIST SEEKERS
+//
 // GET /api/admin/seekers
 // ======================================================
 
-router.get("/", adminAuth, getSeekers);
+router.get(
+  "/",
+
+  adminAuth,
+
+  getSeekers,
+);
 
 // ======================================================
 // CREATE SEEKER
+//
 // POST /api/admin/seekers
+//
+// Admin creates the account without setting the
+// seeker's password.
+//
+// The seeker receives a password setup email.
 // ======================================================
 
-router.post("/", adminAuth, createSeeker);
+router.post(
+  "/",
+
+  adminAuth,
+
+  createSeeker,
+);
 
 // ======================================================
 // RESUME
+//
 // GET /api/admin/seekers/:seekerId/resume
+//
+// Keep before /:seekerId
 // ======================================================
 
-router.get("/:seekerId/resume", adminAuth, getSeekerResume);
+router.get(
+  "/:seekerId/resume",
+
+  adminAuth,
+
+  getSeekerResume,
+);
 
 // ======================================================
 // ONE SEEKER
+//
 // GET /api/admin/seekers/:seekerId
 // ======================================================
 
-router.get("/:seekerId", adminAuth, getSeekerById);
+router.get(
+  "/:seekerId",
+
+  adminAuth,
+
+  getSeekerById,
+);
 
 // ======================================================
 // EDIT SEEKER
+//
 // PATCH /api/admin/seekers/:seekerId
 // ======================================================
 
-router.patch("/:seekerId", adminAuth, updateSeeker);
+router.patch(
+  "/:seekerId",
+
+  adminAuth,
+
+  updateSeeker,
+);
 
 // ======================================================
 // APPROVE / REJECT
+//
 // PATCH /api/admin/seekers/:seekerId/approval
+//
+// Approval sends the seeker an email.
 // ======================================================
 
-router.patch("/:seekerId/approval", adminAuth, updateApprovalStatus);
+router.patch(
+  "/:seekerId/approval",
+
+  adminAuth,
+
+  updateApprovalStatus,
+);
 
 // ======================================================
 // ACCOUNT STATUS
+//
 // PATCH /api/admin/seekers/:seekerId/account-status
 // ======================================================
 
-router.patch("/:seekerId/account-status", adminAuth, updateAccountStatus);
+router.patch(
+  "/:seekerId/account-status",
+
+  adminAuth,
+
+  updateAccountStatus,
+);
 
 // ======================================================
 // PLACEMENT STATUS
+//
 // PATCH /api/admin/seekers/:seekerId/placement-status
 // ======================================================
 
-router.patch("/:seekerId/placement-status", adminAuth, updatePlacementStatus);
+router.patch(
+  "/:seekerId/placement-status",
+
+  adminAuth,
+
+  updatePlacementStatus,
+);
 
 // ======================================================
 // DELETE
+//
 // DELETE /api/admin/seekers/:seekerId
 // ======================================================
 
-router.delete("/:seekerId", adminAuth, deleteSeeker);
+router.delete(
+  "/:seekerId",
+
+  adminAuth,
+
+  deleteSeeker,
+);
 
 module.exports = router;

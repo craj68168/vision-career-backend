@@ -6,11 +6,17 @@ const requireStaffPermission = require("../../middleware/requireStaffPermission"
 
 const {
   getStaffSeekers,
+
   getStaffSeekerById,
+
   screenStaffSeeker,
-  updateStaffSeekerApproval,
+
   getStaffSeekerResume,
 } = require("../../controllers/staff/seekerController");
+
+const {
+  updateStaffSeekerApproval,
+} = require("../../controllers/staff/seekerApprovalController");
 
 const router = express.Router();
 
@@ -20,8 +26,11 @@ const router = express.Router();
 
 router.get(
   "/",
+
   staffAuth,
+
   requireStaffPermission("seekers:view"),
+
   getStaffSeekers,
 );
 
@@ -33,8 +42,11 @@ router.get(
 
 router.get(
   "/:seekerId/resume",
+
   staffAuth,
+
   requireStaffPermission("seekers:view"),
+
   getStaffSeekerResume,
 );
 
@@ -51,8 +63,11 @@ router.get(
 
 router.patch(
   "/:seekerId/screen",
+
   staffAuth,
+
   requireStaffPermission("seekers:manage"),
+
   screenStaffSeeker,
 );
 
@@ -60,12 +75,17 @@ router.patch(
 // APPROVE / REJECT
 //
 // seekers:approval
+//
+// Approval sends the seeker an email.
 // ======================================================
 
 router.patch(
   "/:seekerId/approval",
+
   staffAuth,
+
   requireStaffPermission("seekers:approval"),
+
   updateStaffSeekerApproval,
 );
 
@@ -75,8 +95,11 @@ router.patch(
 
 router.get(
   "/:seekerId",
+
   staffAuth,
+
   requireStaffPermission("seekers:view"),
+
   getStaffSeekerById,
 );
 
