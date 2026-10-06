@@ -8,6 +8,8 @@ const {
   getStaffVacancies,
   getStaffVacancyById,
   screenVacancy,
+  approveStaffVacancy,
+  rejectStaffVacancy,
 } = require("../../controllers/staff/vacancyController");
 
 const router = express.Router();
@@ -26,19 +28,6 @@ router.get(
 );
 
 // ======================================================
-// DETAILS
-//
-// vacancies:view
-// ======================================================
-
-router.get(
-  "/:vacancyId",
-  staffAuth,
-  requireStaffPermission("vacancies:view"),
-  getStaffVacancyById,
-);
-
-// ======================================================
 // SCREEN
 //
 // vacancies:review
@@ -49,6 +38,47 @@ router.patch(
   staffAuth,
   requireStaffPermission("vacancies:review"),
   screenVacancy,
+);
+
+// ======================================================
+// APPROVE
+//
+// vacancies:approval
+//
+// Approval does not publish the vacancy.
+// ======================================================
+
+router.patch(
+  "/:vacancyId/approve",
+  staffAuth,
+  requireStaffPermission("vacancies:approval"),
+  approveStaffVacancy,
+);
+
+// ======================================================
+// REJECT
+//
+// vacancies:approval
+// ======================================================
+
+router.patch(
+  "/:vacancyId/reject",
+  staffAuth,
+  requireStaffPermission("vacancies:approval"),
+  rejectStaffVacancy,
+);
+
+// ======================================================
+// DETAILS
+//
+// vacancies:view
+// ======================================================
+
+router.get(
+  "/:vacancyId",
+  staffAuth,
+  requireStaffPermission("vacancies:view"),
+  getStaffVacancyById,
 );
 
 module.exports = router;

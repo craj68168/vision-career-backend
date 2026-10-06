@@ -8,6 +8,8 @@ const {
   getStaffPlacementRequests,
   getStaffPlacementRequestById,
   screenStaffPlacementRequest,
+  approveStaffPlacementRequest,
+  rejectStaffPlacementRequest,
 } = require("../../controllers/staff/placementRequestController");
 
 const router = express.Router();
@@ -29,8 +31,6 @@ router.get(
 // SCREEN
 //
 // placement_requests:review
-//
-// Keep before /:recruitId
 // ======================================================
 
 router.patch(
@@ -41,9 +41,37 @@ router.patch(
 );
 
 // ======================================================
+// APPROVE
+//
+// placement_requests:approval
+// ======================================================
+
+router.patch(
+  "/:recruitId/approve",
+  staffAuth,
+  requireStaffPermission("placement_requests:approval"),
+  approveStaffPlacementRequest,
+);
+
+// ======================================================
+// REJECT
+//
+// placement_requests:approval
+// ======================================================
+
+router.patch(
+  "/:recruitId/reject",
+  staffAuth,
+  requireStaffPermission("placement_requests:approval"),
+  rejectStaffPlacementRequest,
+);
+
+// ======================================================
 // DETAILS
 //
 // placement_requests:view
+//
+// Keep generic route last.
 // ======================================================
 
 router.get(

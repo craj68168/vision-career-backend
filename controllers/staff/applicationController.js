@@ -27,6 +27,10 @@ const serializeApplication = (application, vacancy) => ({
 
   updatedAt: application.updated_at,
 
+  // ====================================================
+  // STAFF SCREENING
+  // ====================================================
+
   screening: {
     status: application.staff_screening_status || "NOT_SCREENED",
 
@@ -35,6 +39,28 @@ const serializeApplication = (application, vacancy) => ({
     screenedByStaffId: application.screened_by_staff_id || null,
 
     screenedAt: application.screened_at || null,
+  },
+
+  // ====================================================
+  // APPLICATION REVIEW
+  //
+  // Existing application schema fields are reused.
+  //
+  // adminReviewedBy may contain:
+  //
+  // ADM-... when Admin made the decision
+  // STF-... when authorized Staff made the decision
+  //
+  // This avoids changing the existing application
+  // workflow/schema at this stage.
+  // ====================================================
+
+  review: {
+    reviewedAt: application.admin_reviewed_at || null,
+
+    reviewedBy: application.admin_reviewed_by || null,
+
+    rejectionReason: application.admin_rejection_reason || null,
   },
 
   // ====================================================
@@ -132,7 +158,42 @@ const loadVacancyMap = async (applications) => {
 };
 
 // ======================================================
+// LOAD ONE VACANCY SUMMARY
+// ======================================================
+
+const loadVacancySummary = async (vacancyId) => {
+  if (!vacancyId) {
+    return null;
+  }
+
+  return Vacancy.findOne({
+    vacancyId,
+  })
+    .select(
+      [
+        "vacancyId",
+        "title",
+        "companyName",
+        "employmentType",
+        "numberOfPeople",
+        "workLocation",
+        "japaneseLevel",
+        "status",
+      ].join(" "),
+    )
+    .lean();
+};
+
+// ======================================================
 // GET STAFF APPLICATIONS
+//
+// GET /api/staff/applications
+// ======================================================
+
+// ======================================================
+// GET STAFF APPLICATIONS
+//
+// GET /api/staff/applications
 // ======================================================
 
 exports.getApplications = async (req, res) => {
@@ -159,16 +220,42 @@ exports.getApplications = async (req, res) => {
       count: data.length,
 
       summary: {
+        // ==================================================
+        // TOTAL
+        // ==================================================
+
         total: data.length,
+
+        // ==================================================
+        // PENDING APPLICATION DECISIONS
+        //
+        // This counts only applications still waiting for
+        // an approval/rejection decision.
+        // ==================================================
 
         pendingAdminApproval: data.filter(
           (item) => item.status === "PENDING_ADMIN_APPROVAL",
         ).length,
 
+        // ==================================================
+        // SCREENING COUNTS
+        //
+        // IMPORTANT:
+        //
+        // Screening status is counted independently from
+        // the final application status.
+        //
+        // Example:
+        //
+        // SCREENED + SENT_TO_PROVIDER
+        // still belongs in the Screened summary.
+        //
+        // NEEDS_ATTENTION + ADMIN_REJECTED
+        // still belongs in Needs Attention.
+        // ==================================================
+
         notScreened: data.filter(
-          (item) =>
-            item.status === "PENDING_ADMIN_APPROVAL" &&
-            item.screening.status === "NOT_SCREENED",
+          (item) => item.screening.status === "NOT_SCREENED",
         ).length,
 
         screened: data.filter((item) => item.screening.status === "SCREENED")
@@ -194,6 +281,8 @@ exports.getApplications = async (req, res) => {
 
 // ======================================================
 // GET ONE APPLICATION
+//
+// GET /api/staff/applications/:applicationId
 // ======================================================
 
 exports.getApplicationById = async (req, res) => {
@@ -210,22 +299,7 @@ exports.getApplicationById = async (req, res) => {
       });
     }
 
-    const vacancy = await Vacancy.findOne({
-      vacancyId: application.vacancy_id,
-    })
-      .select(
-        [
-          "vacancyId",
-          "title",
-          "companyName",
-          "employmentType",
-          "numberOfPeople",
-          "workLocation",
-          "japaneseLevel",
-          "status",
-        ].join(" "),
-      )
-      .lean();
+    const vacancy = await loadVacancySummary(application.vacancy_id);
 
     return res.status(200).json({
       success: true,
@@ -310,11 +384,26 @@ exports.getStaffApplicationResume = async (req, res) => {
 
 // ======================================================
 // SCREEN APPLICATION
+//
+// PATCH /api/staff/applications/:applicationId/screen
+//
+// Permission:
+// applications:review
+//
+// IMPORTANT:
+//
+// Screening and final approval are separate actions.
+//
+// Screening does NOT change application.status.
 // ======================================================
 
 exports.screenApplication = async (req, res) => {
   try {
     const { screeningStatus, note } = req.body;
+
+    // ==================================================
+    // STATUS VALIDATION
+    // ==================================================
 
     if (!["SCREENED", "NEEDS_ATTENTION"].includes(screeningStatus)) {
       return res.status(400).json({
@@ -324,7 +413,13 @@ exports.screenApplication = async (req, res) => {
       });
     }
 
-    if (screeningStatus === "NEEDS_ATTENTION" && !String(note || "").trim()) {
+    const normalizedNote = String(note || "").trim();
+
+    // ==================================================
+    // NEEDS ATTENTION REQUIRES NOTE
+    // ==================================================
+
+    if (screeningStatus === "NEEDS_ATTENTION" && !normalizedNote) {
       return res.status(400).json({
         success: false,
 
@@ -333,13 +428,17 @@ exports.screenApplication = async (req, res) => {
       });
     }
 
-    if (String(note || "").trim().length > 2000) {
+    if (normalizedNote.length > 2000) {
       return res.status(400).json({
         success: false,
 
         message: "Screening note cannot exceed 2000 characters.",
       });
     }
+
+    // ==================================================
+    // FIND APPLICATION
+    // ==================================================
 
     const application = await Application.findOne({
       application_id: req.params.applicationId,
@@ -353,18 +452,25 @@ exports.screenApplication = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // ONLY PENDING APPLICATIONS CAN BE SCREENED
+    // ==================================================
+
     if (application.status !== "PENDING_ADMIN_APPROVAL") {
       return res.status(409).json({
         success: false,
 
-        message:
-          "Only applications waiting for Admin approval can be screened.",
+        message: "Only applications waiting for approval can be screened.",
       });
     }
 
+    // ==================================================
+    // SAVE SCREENING
+    // ==================================================
+
     application.staff_screening_status = screeningStatus;
 
-    application.staff_screening_note = String(note || "").trim() || null;
+    application.staff_screening_note = normalizedNote || null;
 
     application.screened_by_staff_id = req.staff.staffId;
 
@@ -372,22 +478,7 @@ exports.screenApplication = async (req, res) => {
 
     await application.save();
 
-    const vacancy = await Vacancy.findOne({
-      vacancyId: application.vacancy_id,
-    })
-      .select(
-        [
-          "vacancyId",
-          "title",
-          "companyName",
-          "employmentType",
-          "numberOfPeople",
-          "workLocation",
-          "japaneseLevel",
-          "status",
-        ].join(" "),
-      )
-      .lean();
+    const vacancy = await loadVacancySummary(application.vacancy_id);
 
     return res.status(200).json({
       success: true,
@@ -395,13 +486,9 @@ exports.screenApplication = async (req, res) => {
       message:
         screeningStatus === "SCREENED"
           ? "Application screening completed."
-          : "Application marked as needing Admin attention.",
+          : "Application marked as needing attention.",
 
-      data: serializeApplication(
-        application.toObject(),
-
-        vacancy,
-      ),
+      data: serializeApplication(application.toObject(), vacancy),
     });
   } catch (error) {
     console.error("SCREEN STAFF APPLICATION ERROR:", error);
@@ -410,6 +497,226 @@ exports.screenApplication = async (req, res) => {
       success: false,
 
       message: "Failed to screen application.",
+    });
+  }
+};
+
+// ======================================================
+// APPROVE APPLICATION
+//
+// PATCH /api/staff/applications/:applicationId/approve
+//
+// Permission:
+// applications:approval
+//
+// Workflow:
+//
+// PENDING_ADMIN_APPROVAL
+//          ↓
+// SENT_TO_PROVIDER
+//
+// IMPORTANT:
+//
+// Approval does NOT require Staff screening first.
+//
+// applications:review and applications:approval are
+// intentionally independent permissions.
+// ======================================================
+
+exports.approveStaffApplication = async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+
+    // ==================================================
+    // FIND APPLICATION
+    // ==================================================
+
+    const application = await Application.findOne({
+      application_id: applicationId,
+    });
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Application not found.",
+      });
+    }
+
+    // ==================================================
+    // STATUS VALIDATION
+    // ==================================================
+
+    if (application.status !== "PENDING_ADMIN_APPROVAL") {
+      return res.status(409).json({
+        success: false,
+
+        message: "Only applications waiting for approval can be approved.",
+      });
+    }
+
+    // ==================================================
+    // APPROVE
+    // ==================================================
+
+    application.status = "SENT_TO_PROVIDER";
+
+    application.admin_reviewed_at = new Date();
+
+    application.admin_reviewed_by = req.staff.staffId;
+
+    application.admin_rejection_reason = null;
+
+    await application.save();
+
+    // ==================================================
+    // RELATED VACANCY
+    // ==================================================
+
+    const vacancy = await loadVacancySummary(application.vacancy_id);
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Application approved and sent to Provider.",
+
+      data: serializeApplication(application.toObject(), vacancy),
+    });
+  } catch (error) {
+    console.error("APPROVE STAFF APPLICATION ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to approve application.",
+    });
+  }
+};
+
+// ======================================================
+// REJECT APPLICATION
+//
+// PATCH /api/staff/applications/:applicationId/reject
+//
+// Permission:
+// applications:approval
+//
+// BODY:
+//
+// {
+//   "reason": "Reason for rejection"
+// }
+//
+// Workflow:
+//
+// PENDING_ADMIN_APPROVAL
+//          ↓
+// ADMIN_REJECTED
+//
+// We intentionally retain ADMIN_REJECTED because it is
+// the existing application workflow status used by the
+// Job Seeker side.
+//
+// The decision may now be performed by an Admin or an
+// authorized Staff account.
+// ======================================================
+
+exports.rejectStaffApplication = async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+
+    const normalizedReason = String(req.body?.reason || "").trim();
+
+    // ==================================================
+    // REASON VALIDATION
+    // ==================================================
+
+    if (!normalizedReason) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason is required.",
+      });
+    }
+
+    if (normalizedReason.length > 1000) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason cannot exceed 1000 characters.",
+      });
+    }
+
+    // ==================================================
+    // FIND APPLICATION
+    // ==================================================
+
+    const application = await Application.findOne({
+      application_id: applicationId,
+    });
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Application not found.",
+      });
+    }
+
+    // ==================================================
+    // STATUS VALIDATION
+    // ==================================================
+
+    if (application.status !== "PENDING_ADMIN_APPROVAL") {
+      return res.status(409).json({
+        success: false,
+
+        message: "Only applications waiting for approval can be rejected.",
+      });
+    }
+
+    // ==================================================
+    // REJECT
+    // ==================================================
+
+    application.status = "ADMIN_REJECTED";
+
+    application.admin_reviewed_at = new Date();
+
+    application.admin_reviewed_by = req.staff.staffId;
+
+    application.admin_rejection_reason = normalizedReason;
+
+    await application.save();
+
+    // ==================================================
+    // RELATED VACANCY
+    // ==================================================
+
+    const vacancy = await loadVacancySummary(application.vacancy_id);
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Application rejected successfully.",
+
+      data: serializeApplication(application.toObject(), vacancy),
+    });
+  } catch (error) {
+    console.error("REJECT STAFF APPLICATION ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to reject application.",
     });
   }
 };

@@ -79,15 +79,15 @@ const serializeRequest = (recruit, provider) => ({
 
   reviewedAt: recruit.reviewed_at,
 
+  reviewedByRole: recruit.reviewed_by_role || null,
+
+  reviewedById: recruit.reviewed_by_id || null,
+
   // ==================================================
   // STAFF SCREENING
   // ==================================================
 
   staffScreening: serializeStaffScreening(recruit),
-
-  // ==================================================
-  // TIMESTAMPS
-  // ==================================================
 
   createdAt: recruit.createdAt,
 
@@ -119,9 +119,19 @@ const getProviderMap = async (recruits) => {
 };
 
 // ======================================================
+// GET PROVIDER
+// ======================================================
+
+const getProvider = async (companyId) => {
+  return Register.findOne({
+    registerId: companyId,
+
+    role: "provider",
+  }).lean();
+};
+
+// ======================================================
 // GET ALL
-//
-// GET /api/admin/placement-requests
 // ======================================================
 
 exports.getPlacementRequests = async (req, res) => {
@@ -161,10 +171,11 @@ exports.getPlacementRequests = async (req, res) => {
 
         rejected: data.filter((item) => item.status === "rejected").length,
 
+        // Screening summary is independent from
+        // workflow status.
+
         notScreened: data.filter(
-          (item) =>
-            item.status === "pending_review" &&
-            item.staffScreening.status === "NOT_SCREENED",
+          (item) => item.staffScreening.status === "NOT_SCREENED",
         ).length,
 
         screened: data.filter(
@@ -191,8 +202,6 @@ exports.getPlacementRequests = async (req, res) => {
 
 // ======================================================
 // GET ONE
-//
-// GET /api/admin/placement-requests/:recruitId
 // ======================================================
 
 exports.getPlacementRequestById = async (req, res) => {
@@ -209,11 +218,7 @@ exports.getPlacementRequestById = async (req, res) => {
       });
     }
 
-    const provider = await Register.findOne({
-      registerId: recruit.company_id,
-
-      role: "provider",
-    }).lean();
+    const provider = await getProvider(recruit.company_id);
 
     return res.status(200).json({
       success: true,
@@ -235,11 +240,6 @@ exports.getPlacementRequestById = async (req, res) => {
 // APPROVE
 //
 // pending_review -> approved
-//
-// Staff screening remains preserved.
-//
-// PATCH
-// /api/admin/placement-requests/:recruitId/approve
 // ======================================================
 
 exports.approvePlacementRequest = async (req, res) => {
@@ -268,15 +268,15 @@ exports.approvePlacementRequest = async (req, res) => {
 
     recruit.reviewed_at = new Date();
 
+    recruit.reviewed_by_role = "admin";
+
+    recruit.reviewed_by_id = req.admin.adminId;
+
     recruit.rejection_reason = null;
 
     await recruit.save();
 
-    const provider = await Register.findOne({
-      registerId: recruit.company_id,
-
-      role: "provider",
-    }).lean();
+    const provider = await getProvider(recruit.company_id);
 
     return res.status(200).json({
       success: true,
@@ -300,11 +300,6 @@ exports.approvePlacementRequest = async (req, res) => {
 // REJECT
 //
 // pending_review -> rejected
-//
-// Staff screening remains preserved.
-//
-// PATCH
-// /api/admin/placement-requests/:recruitId/reject
 // ======================================================
 
 exports.rejectPlacementRequest = async (req, res) => {
@@ -352,15 +347,15 @@ exports.rejectPlacementRequest = async (req, res) => {
 
     recruit.reviewed_at = new Date();
 
+    recruit.reviewed_by_role = "admin";
+
+    recruit.reviewed_by_id = req.admin.adminId;
+
     recruit.rejection_reason = reason;
 
     await recruit.save();
 
-    const provider = await Register.findOne({
-      registerId: recruit.company_id,
-
-      role: "provider",
-    }).lean();
+    const provider = await getProvider(recruit.company_id);
 
     return res.status(200).json({
       success: true,

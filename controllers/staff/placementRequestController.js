@@ -79,6 +79,10 @@ const serializeRequest = (recruit, provider) => ({
 
   reviewedAt: recruit.reviewed_at,
 
+  reviewedByRole: recruit.reviewed_by_role || null,
+
+  reviewedById: recruit.reviewed_by_id || null,
+
   // ==================================================
   // STAFF SCREENING
   // ==================================================
@@ -115,12 +119,19 @@ const getProviderMap = async (recruits) => {
 };
 
 // ======================================================
+// LOAD PROVIDER
+// ======================================================
+
+const getProvider = async (companyId) => {
+  return Register.findOne({
+    registerId: companyId,
+
+    role: "provider",
+  }).lean();
+};
+
+// ======================================================
 // GET STAFF PLACEMENT REQUESTS
-//
-// GET /api/staff/placement-requests
-//
-// Draft requests are hidden because they have not been
-// submitted by the Provider yet.
 // ======================================================
 
 exports.getStaffPlacementRequests = async (req, res) => {
@@ -153,13 +164,25 @@ exports.getStaffPlacementRequests = async (req, res) => {
       summary: {
         total: data.length,
 
+        // ==================================================
+        // WORKFLOW STATUS
+        // ==================================================
+
         pendingReview: data.filter((item) => item.status === "pending_review")
           .length,
 
+        approved: data.filter((item) => item.status === "approved").length,
+
+        rejected: data.filter((item) => item.status === "rejected").length,
+
+        // ==================================================
+        // STAFF SCREENING
+        //
+        // Independent from final request status.
+        // ==================================================
+
         notScreened: data.filter(
-          (item) =>
-            item.status === "pending_review" &&
-            item.staffScreening.status === "NOT_SCREENED",
+          (item) => item.staffScreening.status === "NOT_SCREENED",
         ).length,
 
         screened: data.filter(
@@ -169,10 +192,6 @@ exports.getStaffPlacementRequests = async (req, res) => {
         needsAttention: data.filter(
           (item) => item.staffScreening.status === "NEEDS_ATTENTION",
         ).length,
-
-        approved: data.filter((item) => item.status === "approved").length,
-
-        rejected: data.filter((item) => item.status === "rejected").length,
       },
 
       data,
@@ -190,9 +209,6 @@ exports.getStaffPlacementRequests = async (req, res) => {
 
 // ======================================================
 // GET ONE
-//
-// GET
-// /api/staff/placement-requests/:recruitId
 // ======================================================
 
 exports.getStaffPlacementRequestById = async (req, res) => {
@@ -213,11 +229,7 @@ exports.getStaffPlacementRequestById = async (req, res) => {
       });
     }
 
-    const provider = await Register.findOne({
-      registerId: recruit.company_id,
-
-      role: "provider",
-    }).lean();
+    const provider = await getProvider(recruit.company_id);
 
     return res.status(200).json({
       success: true,
@@ -238,13 +250,7 @@ exports.getStaffPlacementRequestById = async (req, res) => {
 // ======================================================
 // SCREEN PLACEMENT REQUEST
 //
-// PATCH
-// /api/staff/placement-requests/:recruitId/screen
-//
-// Staff may only screen requests currently waiting for
-// Admin review.
-//
-// Staff DOES NOT change recruit.status.
+// Screening does NOT modify recruit.status.
 // ======================================================
 
 exports.screenStaffPlacementRequest = async (req, res) => {
@@ -312,13 +318,12 @@ exports.screenStaffPlacementRequest = async (req, res) => {
       return res.status(409).json({
         success: false,
 
-        message:
-          "Only placement requests waiting for Admin review can be screened.",
+        message: "Only pending placement requests can be screened.",
       });
     }
 
     // ==================================================
-    // SAVE STAFF SCREENING
+    // SAVE SCREENING
     // ==================================================
 
     recruit.staff_screening_status = screeningStatus;
@@ -331,15 +336,7 @@ exports.screenStaffPlacementRequest = async (req, res) => {
 
     await recruit.save();
 
-    // ==================================================
-    // PROVIDER
-    // ==================================================
-
-    const provider = await Register.findOne({
-      registerId: recruit.company_id,
-
-      role: "provider",
-    }).lean();
+    const provider = await getProvider(recruit.company_id);
 
     return res.status(200).json({
       success: true,
@@ -347,7 +344,7 @@ exports.screenStaffPlacementRequest = async (req, res) => {
       message:
         screeningStatus === "SCREENED"
           ? "Placement request screening completed."
-          : "Placement request marked as needing Admin attention.",
+          : "Placement request marked as needing attention.",
 
       data: serializeRequest(recruit, provider),
     });
@@ -358,6 +355,151 @@ exports.screenStaffPlacementRequest = async (req, res) => {
       success: false,
 
       message: "Failed to screen placement request.",
+    });
+  }
+};
+
+// ======================================================
+// APPROVE PLACEMENT REQUEST
+//
+// Permission:
+// placement_requests:approval
+//
+// pending_review -> approved
+// ======================================================
+
+exports.approveStaffPlacementRequest = async (req, res) => {
+  try {
+    const recruit = await Recruit.findOne({
+      recruitId: req.params.recruitId,
+    });
+
+    if (!recruit) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Placement request not found.",
+      });
+    }
+
+    if (recruit.status !== "pending_review") {
+      return res.status(409).json({
+        success: false,
+
+        message: "Only pending placement requests can be approved.",
+      });
+    }
+
+    recruit.status = "approved";
+
+    recruit.reviewed_at = new Date();
+
+    recruit.reviewed_by_role = "staff";
+
+    recruit.reviewed_by_id = req.staff.staffId;
+
+    recruit.rejection_reason = null;
+
+    await recruit.save();
+
+    const provider = await getProvider(recruit.company_id);
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Placement request approved.",
+
+      data: serializeRequest(recruit, provider),
+    });
+  } catch (error) {
+    console.error("STAFF APPROVE PLACEMENT REQUEST ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to approve placement request.",
+    });
+  }
+};
+
+// ======================================================
+// REJECT PLACEMENT REQUEST
+//
+// Permission:
+// placement_requests:approval
+//
+// pending_review -> rejected
+// ======================================================
+
+exports.rejectStaffPlacementRequest = async (req, res) => {
+  try {
+    const reason =
+      typeof req.body.reason === "string" ? req.body.reason.trim() : "";
+
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason is required.",
+      });
+    }
+
+    if (reason.length > 1000) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason cannot exceed 1000 characters.",
+      });
+    }
+
+    const recruit = await Recruit.findOne({
+      recruitId: req.params.recruitId,
+    });
+
+    if (!recruit) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Placement request not found.",
+      });
+    }
+
+    if (recruit.status !== "pending_review") {
+      return res.status(409).json({
+        success: false,
+
+        message: "Only pending placement requests can be rejected.",
+      });
+    }
+
+    recruit.status = "rejected";
+
+    recruit.reviewed_at = new Date();
+
+    recruit.reviewed_by_role = "staff";
+
+    recruit.reviewed_by_id = req.staff.staffId;
+
+    recruit.rejection_reason = reason;
+
+    await recruit.save();
+
+    const provider = await getProvider(recruit.company_id);
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Placement request rejected.",
+
+      data: serializeRequest(recruit, provider),
+    });
+  } catch (error) {
+    console.error("STAFF REJECT PLACEMENT REQUEST ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to reject placement request.",
     });
   }
 };

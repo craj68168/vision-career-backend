@@ -114,6 +114,54 @@ const documentSchema = new mongoose.Schema(
 );
 
 // ======================================================
+// APPROVAL HISTORY SCHEMA
+// ======================================================
+
+const approvalHistorySchema = new mongoose.Schema(
+  {
+    decision: {
+      type: String,
+      enum: ["approved", "rejected"],
+      required: true,
+    },
+
+    actor_type: {
+      type: String,
+      enum: ["admin", "staff"],
+      required: true,
+    },
+
+    actor_id: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    actor_name: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    reason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    reviewed_at: {
+      type: Date,
+      required: true,
+      default: Date.now,
+    },
+  },
+  {
+    _id: true,
+  },
+);
+
+// ======================================================
 // MAIN SEEKER SCHEMA
 // ======================================================
 
@@ -185,7 +233,7 @@ const seekerSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // ADMIN APPROVAL
+    // ADMIN / STAFF APPROVAL
     // ==================================================
 
     approval_status: {
@@ -205,10 +253,35 @@ const seekerSchema = new mongoose.Schema(
       default: null,
     },
 
+    approval_reviewed_by_type: {
+      type: String,
+      enum: ["admin", "staff"],
+      default: null,
+    },
+
+    approval_reviewed_by_id: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    approval_reviewed_by_name: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
     rejection_reason: {
       type: String,
       default: null,
       trim: true,
+      maxlength: 2000,
+    },
+
+    approval_history: {
+      type: [approvalHistorySchema],
+      default: [],
     },
 
     // ==================================================
@@ -400,6 +473,78 @@ const seekerSchema = new mongoose.Schema(
     },
   },
 );
+
+// ======================================================
+// RECORD APPROVAL DECISION
+//
+// Shared by Admin and authorized Staff so both flows use
+// exactly the same approval/account state rules and audit
+// history structure.
+// ======================================================
+
+seekerSchema.methods.recordApprovalDecision = function ({
+  decision,
+  actorType,
+  actorId,
+  actorName = null,
+  reason = null,
+}) {
+  if (!["approved", "rejected"].includes(decision)) {
+    throw new Error("Invalid approval decision.");
+  }
+
+  if (!["admin", "staff"].includes(actorType)) {
+    throw new Error("Invalid approval actor type.");
+  }
+
+  if (!actorId) {
+    throw new Error("Approval actor ID is required.");
+  }
+
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+  if (decision === "rejected" && !normalizedReason) {
+    throw new Error("Rejection reason is required.");
+  }
+
+  if (normalizedReason.length > 2000) {
+    throw new Error("Rejection reason cannot exceed 2000 characters.");
+  }
+
+  const reviewedAt = new Date();
+
+  this.approval_status = decision;
+  this.approval_reviewed_at = reviewedAt;
+  this.approval_reviewed_by_type = actorType;
+  this.approval_reviewed_by_id = String(actorId).trim();
+  this.approval_reviewed_by_name = actorName
+    ? String(actorName).trim() || null
+    : null;
+
+  if (decision === "approved") {
+    this.rejection_reason = null;
+
+    if (this.account_status !== "suspended") {
+      this.account_status = "active";
+    }
+  }
+
+  if (decision === "rejected") {
+    this.rejection_reason = normalizedReason;
+    this.account_status = "inactive";
+  }
+
+  this.approval_history.push({
+    decision,
+    actor_type: actorType,
+    actor_id: String(actorId).trim(),
+    actor_name: this.approval_reviewed_by_name,
+    reason: decision === "rejected" ? normalizedReason : null,
+    reviewed_at: reviewedAt,
+  });
+
+  return this;
+};
 
 // ======================================================
 // MODEL

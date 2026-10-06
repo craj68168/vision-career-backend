@@ -17,7 +17,6 @@ const recruitSchema = new mongoose.Schema(
     // PROVIDER
     // ==================================================
 
-    // Provider registerId
     company_id: {
       type: String,
       required: true,
@@ -132,9 +131,26 @@ const recruitSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ==================================================
+    // FINAL REVIEW / DECISION AUDIT
+    // ==================================================
+
     reviewed_at: {
       type: Date,
       default: null,
+    },
+
+    reviewed_by_role: {
+      type: String,
+      enum: ["admin", "staff"],
+      default: null,
+      index: true,
+    },
+
+    reviewed_by_id: {
+      type: String,
+      default: null,
+      index: true,
     },
 
     rejection_reason: {
@@ -147,10 +163,7 @@ const recruitSchema = new mongoose.Schema(
     // ==================================================
     // STAFF SCREENING
     //
-    // Staff screening does NOT modify status.
-    //
-    // Admin remains responsible for final
-    // approval / rejection.
+    // Screening is independent from final approval.
     // ==================================================
 
     staff_screening_status: {

@@ -1,4 +1,5 @@
 const fs = require("fs");
+
 const path = require("path");
 
 const Seeker = require("../../models/seekers/seekerSchema");
@@ -7,11 +8,14 @@ const Application = require("../../models/applications/applicationSchema");
 
 const {
   isStorageReference,
+
   resolveFileReference,
 } = require("../../utils/storageReference");
 
 // ======================================================
+
 // CONSTANTS
+
 // ======================================================
 
 const APPROVAL_STATUSES = ["pending", "approved", "rejected"];
@@ -20,24 +24,32 @@ const ACCOUNT_STATUSES = ["inactive", "active", "suspended"];
 
 const PLACEMENT_STATUSES = [
   "unplaced",
+
   "matching",
+
   "interview",
+
   "selected",
+
   "placed",
 ];
 
 const SCREENING_STATUSES = ["NOT_SCREENED", "SCREENED", "NEEDS_ATTENTION"];
 
 // ======================================================
+
 // ESCAPE REGEX
+
 // ======================================================
 
 const escapeRegex = (value = "") => {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&");
 };
 
 // ======================================================
+
 // STAFF SCREENING SERIALIZER
+
 // ======================================================
 
 const serializeScreening = (seeker) => ({
@@ -51,7 +63,63 @@ const serializeScreening = (seeker) => ({
 });
 
 // ======================================================
+
+// APPROVAL REVIEW SERIALIZER
+
+// ======================================================
+
+const serializeApprovalReview = (seeker) => ({
+  reviewedAt: seeker.approval_reviewed_at || null,
+
+  reviewedByType: seeker.approval_reviewed_by_type || null,
+
+  reviewedById: seeker.approval_reviewed_by_id || null,
+
+  reviewedByName: seeker.approval_reviewed_by_name || null,
+});
+
+// ======================================================
+
+// APPROVAL HISTORY SERIALIZER
+
+// ======================================================
+
+const serializeApprovalHistory = (seeker) => {
+  const history = Array.isArray(seeker.approval_history)
+    ? seeker.approval_history
+    : [];
+
+  return history
+
+    .map((entry) => ({
+      id: entry._id ? String(entry._id) : null,
+
+      decision: entry.decision,
+
+      actorType: entry.actor_type,
+
+      actorId: entry.actor_id,
+
+      actorName: entry.actor_name || null,
+
+      reason: entry.reason || null,
+
+      reviewedAt: entry.reviewed_at || null,
+    }))
+
+    .sort((a, b) => {
+      const aTime = a.reviewedAt ? new Date(a.reviewedAt).getTime() : 0;
+
+      const bTime = b.reviewedAt ? new Date(b.reviewedAt).getTime() : 0;
+
+      return bTime - aTime;
+    });
+};
+
+// ======================================================
+
 // RESOLVE OTHER DOCUMENTS
+
 // ======================================================
 
 const resolveOtherDocuments = async (documents = []) => {
@@ -78,7 +146,9 @@ const resolveOtherDocuments = async (documents = []) => {
 };
 
 // ======================================================
+
 // SEEKER SERIALIZER
+
 // ======================================================
 
 const serializeSeeker = async (seeker, applicationsCount = 0) => {
@@ -86,7 +156,9 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
     typeof seeker.toObject === "function" ? seeker.toObject() : seeker;
 
   // ==================================================
+
   // PRIVATE STORAGE URLS
+
   // ==================================================
 
   const profilePhoto = await resolveFileReference(item.profile_photo, 3600);
@@ -95,13 +167,16 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
 
   const generatedResumeFile = await resolveFileReference(
     item.generated_resume_file,
+
     3600,
   );
 
   const otherDocuments = await resolveOtherDocuments(item.other_documents);
 
   // ==================================================
+
   // RESPONSE
+
   // ==================================================
 
   return {
@@ -120,6 +195,10 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
     approval_reviewed_at: item.approval_reviewed_at || null,
 
     rejection_reason: item.rejection_reason || null,
+
+    approvalReview: serializeApprovalReview(item),
+
+    approvalHistory: serializeApprovalHistory(item),
 
     profile_photo: profilePhoto,
 
@@ -172,7 +251,9 @@ const serializeSeeker = async (seeker, applicationsCount = 0) => {
 };
 
 // ======================================================
+
 // APPLICATION COUNTS
+
 // ======================================================
 
 const getApplicationCountMap = async (seekerIds) => {
@@ -208,9 +289,13 @@ const getApplicationCountMap = async (seekerIds) => {
 };
 
 // ======================================================
+
 // GET STAFF SEEKERS
+
 //
+
 // GET /api/staff/seekers
+
 // ======================================================
 
 exports.getStaffSeekers = async (req, res) => {
@@ -235,13 +320,16 @@ exports.getStaffSeekers = async (req, res) => {
 
     const pageLimit = Math.min(
       Math.max(Number.parseInt(limit, 10) || 20, 1),
+
       100,
     );
 
     const filter = {};
 
     // ==================================================
+
     // SEARCH
+
     // ==================================================
 
     if (typeof search === "string" && search.trim()) {
@@ -275,7 +363,9 @@ exports.getStaffSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // FILTERS
+
     // ==================================================
 
     if (APPROVAL_STATUSES.includes(approvalStatus)) {
@@ -319,24 +409,24 @@ exports.getStaffSeekers = async (req, res) => {
     }
 
     // ==================================================
+
     // QUERY
+
     // ==================================================
 
     const [
       seekers,
-
       filteredCount,
-
       total,
-
       pendingApproval,
-
       notScreened,
-
       screened,
-
       needsAttention,
     ] = await Promise.all([
+      // ==================================================
+      // FILTERED SEEKER LIST
+      // ==================================================
+
       Seeker.find(filter)
         .sort({
           created_at: -1,
@@ -345,17 +435,38 @@ exports.getStaffSeekers = async (req, res) => {
         .limit(pageLimit)
         .lean(),
 
+      // ==================================================
+      // FILTERED RESULT COUNT
+      // ==================================================
+
       Seeker.countDocuments(filter),
 
+      // ==================================================
+      // TOTAL JOB SEEKERS
+      // ==================================================
+
       Seeker.countDocuments(),
+
+      // ==================================================
+      // PENDING REGISTRATION APPROVAL
+      //
+      // Only registrations still awaiting a decision.
+      // ==================================================
 
       Seeker.countDocuments({
         approval_status: "pending",
       }),
 
-      Seeker.countDocuments({
-        approval_status: "pending",
+      // ==================================================
+      // NOT SCREENED
+      //
+      // Screening is independent from approval status.
+      //
+      // Include legacy records where the field does not
+      // exist or is null.
+      // ==================================================
 
+      Seeker.countDocuments({
         $or: [
           {
             staff_screening_status: "NOT_SCREENED",
@@ -373,15 +484,23 @@ exports.getStaffSeekers = async (req, res) => {
         ],
       }),
 
-      Seeker.countDocuments({
-        approval_status: "pending",
+      // ==================================================
+      // SCREENED
+      //
+      // Count regardless of approved/rejected/pending.
+      // ==================================================
 
+      Seeker.countDocuments({
         staff_screening_status: "SCREENED",
       }),
 
-      Seeker.countDocuments({
-        approval_status: "pending",
+      // ==================================================
+      // NEEDS ATTENTION
+      //
+      // Count regardless of approved/rejected/pending.
+      // ==================================================
 
+      Seeker.countDocuments({
         staff_screening_status: "NEEDS_ATTENTION",
       }),
     ]);
@@ -391,7 +510,9 @@ exports.getStaffSeekers = async (req, res) => {
     const applicationCountMap = await getApplicationCountMap(seekerIds);
 
     // ==================================================
+
     // SIGNED URL SERIALIZATION
+
     // ==================================================
 
     const data = await Promise.all(
@@ -445,9 +566,13 @@ exports.getStaffSeekers = async (req, res) => {
 };
 
 // ======================================================
+
 // GET ONE SEEKER
+
 //
+
 // GET /api/staff/seekers/:seekerId
+
 // ======================================================
 
 exports.getStaffSeekerById = async (req, res) => {
@@ -487,9 +612,13 @@ exports.getStaffSeekerById = async (req, res) => {
 };
 
 // ======================================================
+
 // SCREEN SEEKER REGISTRATION
+
 //
+
 // PATCH /api/staff/seekers/:seekerId/screen
+
 // ======================================================
 
 exports.screenStaffSeeker = async (req, res) => {
@@ -538,7 +667,9 @@ exports.screenStaffSeeker = async (req, res) => {
     }
 
     // ==================================================
+
     // ONLY PENDING SEEKERS
+
     // ==================================================
 
     if (seeker.approval_status !== "pending") {
@@ -585,9 +716,13 @@ exports.screenStaffSeeker = async (req, res) => {
 };
 
 // ======================================================
+
 // STAFF SEEKER RESUME
+
 //
+
 // GET /api/staff/seekers/:seekerId/resume
+
 // ======================================================
 
 exports.getStaffSeekerResume = async (req, res) => {
@@ -617,7 +752,9 @@ exports.getStaffSeekerResume = async (req, res) => {
     }
 
     // ==================================================
+
     // SUPABASE PRIVATE STORAGE
+
     // ==================================================
 
     if (isStorageReference(resumeUrl)) {
@@ -635,7 +772,9 @@ exports.getStaffSeekerResume = async (req, res) => {
     }
 
     // ==================================================
+
     // LEGACY LOCAL STORAGE
+
     // ==================================================
 
     const fileName = path.basename(resumeUrl);
@@ -668,6 +807,162 @@ exports.getStaffSeekerResume = async (req, res) => {
       success: false,
 
       message: "Failed to download resume.",
+    });
+  }
+};
+
+// ======================================================
+
+// APPROVE / REJECT SEEKER REGISTRATION
+
+//
+
+// PATCH /api/staff/seekers/:seekerId/approval
+
+//
+
+// Requires:
+
+//
+
+// seekers:approval
+
+//
+
+// This is independent from Staff screening.
+
+//
+
+// Approval:
+
+// - approval_status = approved
+
+// - account_status = active
+
+//
+
+// Rejection:
+
+// - approval_status = rejected
+
+// - account_status = inactive
+
+// - rejection reason required
+
+// ======================================================
+
+exports.updateStaffSeekerApproval = async (req, res) => {
+  try {
+    const { seekerId } = req.params;
+
+    const { decision, reason = null } = req.body;
+
+    // ==================================================
+    // DECISION
+    // ==================================================
+
+    if (!["approved", "rejected"].includes(decision)) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Decision must be approved or rejected.",
+      });
+    }
+
+    // ==================================================
+    // REJECTION REASON
+    // ==================================================
+
+    const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+    if (decision === "rejected" && !normalizedReason) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason is required.",
+      });
+    }
+
+    if (normalizedReason.length > 2000) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Rejection reason cannot exceed 2000 characters.",
+      });
+    }
+
+    // ==================================================
+    // SEEKER
+    // ==================================================
+
+    const seeker = await Seeker.findOne({
+      seeker_id: seekerId,
+    });
+
+    if (!seeker) {
+      return res.status(404).json({
+        success: false,
+
+        message: "Job seeker not found.",
+      });
+    }
+
+    // ==================================================
+    // ONLY PENDING REGISTRATIONS
+    // ==================================================
+
+    if (seeker.approval_status !== "pending") {
+      return res.status(409).json({
+        success: false,
+
+        message:
+          "Only Job Seekers with pending registration approval can be approved or rejected by Staff.",
+      });
+    }
+
+    // ==================================================
+    // RECORD DECISION + AUDIT HISTORY
+    // ==================================================
+
+    seeker.recordApprovalDecision({
+      decision,
+
+      actorType: "staff",
+
+      actorId: req.staff.staffId,
+
+      actorName: req.staff.name,
+
+      reason: normalizedReason,
+    });
+
+    await seeker.save();
+
+    // ==================================================
+    // APPLICATION COUNT
+    // ==================================================
+
+    const applicationsCount = await Application.countDocuments({
+      seeker_id: seekerId,
+    });
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        decision === "approved"
+          ? "Job Seeker approved successfully."
+          : "Job Seeker rejected successfully.",
+
+      data: await serializeSeeker(seeker, applicationsCount),
+    });
+  } catch (error) {
+    console.error("STAFF SEEKER APPROVAL ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+
+      message: "Failed to update Job Seeker approval.",
     });
   }
 };

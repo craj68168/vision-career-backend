@@ -2,7 +2,35 @@ const bcrypt = require("bcryptjs");
 
 const Staff = require("../../models/admin/staffSchema");
 
-const { STAFF_PERMISSIONS } = require("../../config/staffPermissions");
+const {
+  STAFF_PERMISSIONS,
+  ASSIGNABLE_STAFF_PERMISSIONS,
+  AUTOMATIC_STAFF_PERMISSIONS,
+} = require("../../config/staffPermissions");
+
+// ======================================================
+// NORMALIZE PERMISSIONS
+//
+// dashboard:view and training:view are legacy automatic
+// permissions and should no longer be stored when a
+// Staff account is created or edited.
+// ======================================================
+
+const normalizePermissions = (permissions = []) => {
+  if (!Array.isArray(permissions)) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      permissions.filter(
+        (permission) =>
+          STAFF_PERMISSIONS.includes(permission) &&
+          !AUTOMATIC_STAFF_PERMISSIONS.includes(permission),
+      ),
+    ),
+  ];
+};
 
 // ======================================================
 // SERIALIZER
@@ -23,7 +51,9 @@ const serializeStaff = (staff) => ({
 
   status: staff.status,
 
-  permissions: staff.permissions,
+  // Do not expose legacy automatic permissions to
+  // Admin permission-management UI.
+  permissions: normalizePermissions(staff.permissions),
 
   createdByAdminId: staff.createdByAdminId,
 
@@ -115,6 +145,8 @@ exports.createStaff = async (req, res) => {
       });
     }
 
+    const normalizedPermissions = normalizePermissions(permissions);
+
     // ==================================================
     // EMAIL
     // ==================================================
@@ -154,7 +186,7 @@ exports.createStaff = async (req, res) => {
 
       status,
 
-      permissions: [...new Set(permissions)],
+      permissions: normalizedPermissions,
 
       createdByAdminId: req.admin.adminId,
     });
@@ -255,6 +287,8 @@ exports.getStaffById = async (req, res) => {
       data: serializeStaff(staff),
     });
   } catch (error) {
+    console.error("GET STAFF BY ID ERROR:", error);
+
     return res.status(500).json({
       success: false,
 
@@ -374,7 +408,7 @@ exports.updateStaff = async (req, res) => {
         });
       }
 
-      staff.permissions = [...new Set(permissions)];
+      staff.permissions = normalizePermissions(permissions);
     }
 
     await staff.save();
@@ -467,6 +501,9 @@ exports.getStaffPermissionOptions = async (req, res) => {
   return res.status(200).json({
     success: true,
 
-    data: STAFF_PERMISSIONS,
+    // Only configurable permissions are returned.
+    //
+    // Dashboard / Training / Security are automatic.
+    data: ASSIGNABLE_STAFF_PERMISSIONS,
   });
 };
