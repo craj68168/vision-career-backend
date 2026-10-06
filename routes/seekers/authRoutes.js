@@ -2,24 +2,87 @@ const express = require("express");
 
 const {
   register,
+
   login,
+
   forgotPassword,
+
   verifyResetCode,
+
   resetPassword,
 } = require("../../controllers/seekers/authController");
 
+const {
+  setInitialPassword,
+} = require("../../controllers/seekers/accountSetupController");
+
 const router = express.Router();
 
-// Register seeker
-router.post("/register", register);
+// ======================================================
+// REGISTER SEEKER
+// ======================================================
 
-// Login seeker
-router.post("/login", login);
+router.post(
+  "/register",
 
-router.post("/forgot-password", forgotPassword);
+  register,
+);
 
-router.post("/verify-reset-code", verifyResetCode);
+// ======================================================
+// LOGIN SEEKER
+// ======================================================
 
-router.post("/reset-password", resetPassword);
+router.post(
+  "/login",
+
+  login,
+);
+
+// ======================================================
+// FORGOT PASSWORD
+//
+// Existing normal forgot-password flow.
+// ======================================================
+
+router.post(
+  "/forgot-password",
+
+  forgotPassword,
+);
+
+// ======================================================
+// VERIFY RESET CODE
+// ======================================================
+
+router.post(
+  "/verify-reset-code",
+
+  verifyResetCode,
+);
+
+// ======================================================
+// RESET EXISTING PASSWORD
+// ======================================================
+
+router.post(
+  "/reset-password",
+
+  resetPassword,
+);
+
+// ======================================================
+// SET INITIAL PASSWORD
+//
+// Admin-created seeker account only.
+//
+// The secure setup token comes directly from the
+// account-created email.
+// ======================================================
+
+router.post(
+  "/set-password",
+
+  setInitialPassword,
+);
 
 module.exports = router;
