@@ -10,6 +10,10 @@ const {
   syncSeekerPlacementStatus,
 } = require("../../utils/syncSeekerPlacementStatus");
 
+const {
+  calculatePlacementEligibility,
+} = require("../../utils/seekerProfileStatus");
+
 // ======================================================
 // GENERATE PLACEMENT CANDIDATE ID
 // ======================================================
@@ -83,12 +87,6 @@ const buildCandidateSnapshot = (seeker) => ({
 // ======================================================
 // STAFF REVIEW SERIALIZER
 // ======================================================
-//
-// Existing candidate records may not physically contain
-// these fields yet.
-//
-// Treat missing values as NOT_REVIEWED.
-// ======================================================
 
 const serializeStaffReview = (candidate) => ({
   status: candidate.staff_review_status || "NOT_REVIEWED",
@@ -113,10 +111,6 @@ const serializeCandidate = (candidate) => ({
 
   seekerId: candidate.seekerId,
 
-  // ==================================================
-  // PROVIDER PIPELINE
-  // ==================================================
-
   status: candidate.status,
 
   candidate: candidate.candidate_snapshot,
@@ -137,15 +131,7 @@ const serializeCandidate = (candidate) => ({
 
   rejectionReason: candidate.rejectionReason,
 
-  // ==================================================
-  // STAFF OPERATIONAL REVIEW
-  // ==================================================
-
   staffReview: serializeStaffReview(candidate),
-
-  // ==================================================
-  // TIMESTAMPS
-  // ==================================================
 
   createdAt: candidate.createdAt,
 
@@ -169,6 +155,14 @@ const getApprovedRecruit = async (recruitId) => {
 //
 // GET
 // /api/admin/placement-candidates/:recruitId/eligible
+//
+// ELIGIBILITY:
+//
+// 1. Approved
+// 2. Active
+// 3. Complete profile
+// 4. Not already placed
+// 5. Not already matched to this request
 // ======================================================
 
 exports.getEligibleSeekers = async (req, res) => {
@@ -185,17 +179,23 @@ exports.getEligibleSeekers = async (req, res) => {
       });
     }
 
-    // ==================================================
+    // ================================================
     // ALREADY MATCHED TO THIS REQUEST
-    // ==================================================
+    // ================================================
 
     const matchedSeekerIds = await PlacementCandidate.distinct("seekerId", {
       recruitId,
     });
 
-    // ==================================================
-    // ELIGIBLE SEEKERS
-    // ==================================================
+    // ================================================
+    // BASIC DATABASE FILTER
+    //
+    // We still do the cheap status filtering in
+    // MongoDB first.
+    //
+    // Profile completeness is calculated afterwards
+    // through the shared eligibility utility.
+    // ================================================
 
     const seekers = await Seeker.find({
       approval_status: "approved",
@@ -214,17 +214,35 @@ exports.getEligibleSeekers = async (req, res) => {
         [
           "seeker_id",
           "name",
-          "nationality",
+
+          "approval_status",
+          "account_status",
+
+          "phone",
+          "address",
           "current_location",
+          "date_of_birth",
+          "gender",
+          "nationality",
+
           "visa_type",
           "visa_expiry_date",
+
           "japanese_level",
           "skills",
+
           "desired_job",
           "desired_location",
+          "available_from",
+
+          "resume_file",
+          "generated_resume_file",
+
           "education",
           "employment_history",
+
           "placement_status",
+
           "created_at",
         ].join(" "),
       )
@@ -233,33 +251,59 @@ exports.getEligibleSeekers = async (req, res) => {
       })
       .lean();
 
-    const data = seekers.map((seeker) => ({
-      seekerId: seeker.seeker_id,
+    // ================================================
+    // PROFILE ELIGIBILITY
+    // ================================================
 
-      name: seeker.name,
+    const eligibleSeekers = seekers.filter((seeker) => {
+      const eligibility = calculatePlacementEligibility(seeker);
 
-      nationality: seeker.nationality || null,
+      return eligibility.isEligible === true;
+    });
 
-      currentLocation: seeker.current_location || null,
+    // ================================================
+    // RESPONSE
+    // ================================================
 
-      visaType: seeker.visa_type || null,
+    const data = eligibleSeekers.map((seeker) => {
+      const eligibility = calculatePlacementEligibility(seeker);
 
-      visaExpiryDate: seeker.visa_expiry_date || null,
+      return {
+        seekerId: seeker.seeker_id,
 
-      japaneseLevel: seeker.japanese_level || null,
+        name: seeker.name,
 
-      skills: seeker.skills || [],
+        nationality: seeker.nationality || null,
 
-      desiredJob: seeker.desired_job || null,
+        currentLocation: seeker.current_location || null,
 
-      desiredLocation: seeker.desired_location || null,
+        visaType: seeker.visa_type || null,
 
-      education: seeker.education || [],
+        visaExpiryDate: seeker.visa_expiry_date || null,
 
-      employmentHistory: seeker.employment_history || [],
+        japaneseLevel: seeker.japanese_level || null,
 
-      placementStatus: seeker.placement_status,
-    }));
+        skills: seeker.skills || [],
+
+        desiredJob: seeker.desired_job || null,
+
+        desiredLocation: seeker.desired_location || null,
+
+        education: seeker.education || [],
+
+        employmentHistory: seeker.employment_history || [],
+
+        placementStatus: seeker.placement_status,
+
+        profileStatus: eligibility.profile.isComplete
+          ? "COMPLETE"
+          : "INCOMPLETE",
+
+        completionPercentage: eligibility.profile.completionPercentage,
+
+        placementEligible: eligibility.isEligible,
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -295,6 +339,9 @@ exports.getEligibleSeekers = async (req, res) => {
 
 // ======================================================
 // GET MATCHED CANDIDATES
+//
+// Existing history remains visible even if the seeker's
+// profile later becomes incomplete.
 //
 // GET
 // /api/admin/placement-candidates/:recruitId
@@ -351,9 +398,9 @@ exports.matchCandidate = async (req, res) => {
   try {
     const { recruitId, seekerId } = req.params;
 
-    // ==================================================
+    // ================================================
     // APPROVED REQUEST
-    // ==================================================
+    // ================================================
 
     const recruit = await getApprovedRecruit(recruitId);
 
@@ -366,29 +413,62 @@ exports.matchCandidate = async (req, res) => {
       });
     }
 
-    // ==================================================
+    // ================================================
     // SEEKER
-    // ==================================================
+    //
+    // Find by ID first.
+    //
+    // Do NOT hide an incomplete / inactive seeker in
+    // this query because we want to return the actual
+    // eligibility reason below.
+    // ================================================
 
     const seeker = await Seeker.findOne({
       seeker_id: seekerId,
-
-      approval_status: "approved",
-
-      account_status: "active",
     });
 
     if (!seeker) {
       return res.status(404).json({
         success: false,
 
-        message: "Eligible Job Seeker not found.",
+        message: "Job Seeker not found.",
       });
     }
 
-    // ==================================================
+    // ================================================
+    // PLACEMENT ELIGIBILITY
+    // ================================================
+
+    const eligibility = calculatePlacementEligibility(seeker);
+
+    if (!eligibility.isEligible) {
+      return res.status(409).json({
+        success: false,
+
+        message:
+          "This Job Seeker is not eligible for placement because the account or profile requirements are incomplete.",
+
+        placement_eligible: false,
+
+        profile_status: eligibility.profile.isComplete
+          ? "COMPLETE"
+          : "INCOMPLETE",
+
+        completion_percentage: eligibility.profile.completionPercentage,
+
+        missing_fields: eligibility.profile.missingFields,
+
+        placement_eligibility: {
+          status: eligibility.status,
+
+          reasons: eligibility.reasons,
+        },
+      });
+    }
+
+    // ================================================
     // ALREADY PLACED
-    // ==================================================
+    // ================================================
 
     if (seeker.placement_status === "placed") {
       return res.status(409).json({
@@ -398,9 +478,9 @@ exports.matchCandidate = async (req, res) => {
       });
     }
 
-    // ==================================================
+    // ================================================
     // DUPLICATE FOR SAME REQUEST
-    // ==================================================
+    // ================================================
 
     const existing = await PlacementCandidate.findOne({
       recruitId,
@@ -417,15 +497,15 @@ exports.matchCandidate = async (req, res) => {
       });
     }
 
-    // ==================================================
+    // ================================================
     // GENERATE ID
-    // ==================================================
+    // ================================================
 
     const placementCandidateId = await generatePlacementCandidateId();
 
-    // ==================================================
+    // ================================================
     // CREATE MATCH
-    // ==================================================
+    // ================================================
 
     const candidate = await PlacementCandidate.create({
       placementCandidateId,
@@ -444,12 +524,6 @@ exports.matchCandidate = async (req, res) => {
 
       matchedAt: new Date(),
 
-      // Explicit initial Staff review values.
-      //
-      // The schema already defaults these, but
-      // keeping them here makes the new workflow
-      // clear when inspecting MongoDB.
-
       staff_review_status: "NOT_REVIEWED",
 
       staff_review_note: null,
@@ -459,9 +533,9 @@ exports.matchCandidate = async (req, res) => {
       staff_reviewed_at: null,
     });
 
-    // ==================================================
+    // ================================================
     // SYNC SEEKER STATUS
-    // ==================================================
+    // ================================================
 
     await syncSeekerPlacementStatus(seeker.seeker_id);
 
