@@ -12,6 +12,10 @@ const {
   "../../services/resumeService",
 );
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 // GENERATE / REGENERATE RESUME
 //
@@ -36,8 +40,7 @@ exports.generateResume = async (
     if (!seeker) {
       return res.status(404).json({
         success: false,
-        message:
-          "Job Seeker not found.",
+        message: t(req, "Job Seeker not found.", "求職者が見つかりません。"),
       });
     }
 
@@ -98,8 +101,11 @@ exports.generateResume = async (
     return res.status(200).json({
       success: true,
 
-      message:
+      message: t(
+        req,
         "Privacy-safe resume generated successfully.",
+        "個人情報を保護した履歴書を作成しました。",
+      ),
 
       data: {
         generated_resume_file:
@@ -127,8 +133,11 @@ exports.generateResume = async (
 
     return res.status(500).json({
       success: false,
-      message:
+      message: t(
+        req,
         "Failed to generate resume.",
+        "履歴書の作成に失敗しました。",
+      ),
     });
   }
 };
@@ -155,8 +164,7 @@ exports.getGeneratedResume = async (
     if (!seeker) {
       return res.status(404).json({
         success: false,
-        message:
-          "Job Seeker not found.",
+        message: t(req, "Job Seeker not found.", "求職者が見つかりません。"),
       });
     }
 
@@ -165,8 +173,11 @@ exports.getGeneratedResume = async (
     ) {
       return res.status(404).json({
         success: false,
-        message:
+        message: t(
+          req,
           "Generated resume not found.",
+          "自動生成履歴書が見つかりません。",
+        ),
       });
     }
 
@@ -188,8 +199,11 @@ exports.getGeneratedResume = async (
     ) {
       return res.status(404).json({
         success: false,
-        message:
+        message: t(
+          req,
           "Generated resume file not found.",
+          "自動生成履歴書ファイルが見つかりません。",
+        ),
       });
     }
 
@@ -214,8 +228,11 @@ exports.getGeneratedResume = async (
 
     return res.status(500).json({
       success: false,
-      message:
+      message: t(
+        req,
         "Failed to get generated resume.",
+        "自動生成履歴書の取得に失敗しました。",
+      ),
     });
   }
 };
