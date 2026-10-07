@@ -171,6 +171,8 @@ const toPublicVacancy = (vacancy) => ({
   isPublished: vacancy.isPublished,
 
   createdAt: vacancy.createdAt,
+
+  updatedAt: vacancy.updatedAt,
 });
 
 // ======================================================
