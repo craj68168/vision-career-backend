@@ -11,21 +11,64 @@ const {
 
 const providerAuth = require("../../middleware/providerAuth");
 
+const providerProfileComplete = require("../../middleware/providerProfileComplete");
+
 const router = express.Router();
 
 // ======================================================
 // PROVIDER PLACEMENT REQUESTS
 // ======================================================
 
-router.post("/", providerAuth, createRecruit);
+// ======================================================
+// CREATE PLACEMENT REQUEST
+//
+// A Provider must complete the company profile before
+// starting a new Placement Request.
+// ======================================================
+
+router.post("/", providerAuth, providerProfileComplete, createRecruit);
+
+// ======================================================
+// VIEW EXISTING REQUESTS
+//
+// Existing records stay accessible even if a profile
+// later becomes incomplete.
+// ======================================================
 
 router.get("/", providerAuth, getAllRecruits);
 
 router.get("/:recruitId", providerAuth, getRecruitById);
 
+// ======================================================
+// EDIT DRAFT / REJECTED REQUEST
+//
+// Editing is allowed.
+//
+// The Provider cannot actually submit/resubmit it until
+// the company profile is complete.
+// ======================================================
+
 router.put("/:recruitId", providerAuth, updateRecruit);
 
-router.patch("/:recruitId/submit", providerAuth, submitRecruit);
+// ======================================================
+// SUBMIT / RESUBMIT
+//
+// Profile completion is enforced here again.
+//
+// This protects direct API calls even if someone tries
+// to bypass the frontend.
+// ======================================================
+
+router.patch(
+  "/:recruitId/submit",
+  providerAuth,
+  providerProfileComplete,
+  submitRecruit,
+);
+
+// ======================================================
+// DELETE
+// ======================================================
 
 router.delete("/:recruitId", providerAuth, deleteRecruit);
 

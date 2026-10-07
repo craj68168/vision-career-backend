@@ -15,18 +15,28 @@ const {
 
 const providerAuth = require("../../middleware/providerAuth");
 
+const providerProfileComplete = require("../../middleware/providerProfileComplete");
+
 const router = express.Router();
 
 // ======================================================
 // PROVIDER CREATE VACANCY
+//
+// Provider must:
+// 1. be authenticated / active
+// 2. have a complete company profile
+//
 // POST /api/providers/vacancies
 // ======================================================
 
-router.post("/", providerAuth, createVacancy);
+router.post("/", providerAuth, providerProfileComplete, createVacancy);
 
 // ======================================================
 // PROVIDER'S VACANCIES
 // GET /api/providers/vacancies
+//
+// Viewing existing vacancies remains allowed even if
+// the profile later becomes incomplete.
 // ======================================================
 
 router.get("/", providerAuth, getAllVacancies);
@@ -41,8 +51,8 @@ router.get("/public", getPublicVacancies);
 // ======================================================
 // ADMIN STATUS
 //
-// Later these should be moved to admin routes
-// and protected by admin middleware.
+// Later these should be moved to Admin routes and
+// protected by Admin middleware.
 // ======================================================
 
 router.put("/approve/:id", approveVacancy);
@@ -59,7 +69,23 @@ router.put("/close/:id", closeVacancy);
 
 router.get("/:id", providerAuth, getVacancyById);
 
-router.put("/:id", providerAuth, updateVacancy);
+// ======================================================
+// PROVIDER UPDATE / RESUBMIT VACANCY
+//
+// Updating a vacancy currently sends it back to
+// pending_review.
+//
+// Because that is effectively another submission,
+// a complete Provider profile is required.
+// ======================================================
+
+router.put("/:id", providerAuth, providerProfileComplete, updateVacancy);
+
+// ======================================================
+// DELETE
+//
+// Existing vacancy deletion remains available.
+// ======================================================
 
 router.delete("/:id", providerAuth, deleteVacancy);
 

@@ -1,41 +1,13 @@
 const Profile = require("../../models/providers/profileSchema");
-
 const Register = require("../../models/providers/registerSchema");
 
-// ======================================================
-// REQUIRED PROFILE FIELDS
-// ======================================================
+const {
+  calculateProviderProfileCompletion,
+} = require("../../utils/providerProfileStatus");
 
-const REQUIRED_PROFILE_FIELDS = [
-  {
-    field: "companyName",
-    label: "Company Name",
-  },
-  {
-    field: "phone",
-    label: "Phone Number",
-  },
-  {
-    field: "address",
-    label: "Address",
-  },
-  {
-    field: "industry",
-    label: "Industry",
-  },
-  {
-    field: "contact_person",
-    label: "Contact Person",
-  },
-  {
-    field: "contact_person_phone",
-    label: "Contact Person Phone",
-  },
-  {
-    field: "contact_person_email",
-    label: "Contact Person Email",
-  },
-];
+// ======================================================
+// PROFILE UPDATE FIELDS
+// ======================================================
 
 const PROFILE_UPDATE_FIELDS = [
   "phone",
@@ -49,6 +21,10 @@ const PROFILE_UPDATE_FIELDS = [
   "notes",
 ];
 
+// ======================================================
+// CLEAN VALUE
+// ======================================================
+
 const cleanValue = (value) => {
   if (typeof value !== "string") {
     return value;
@@ -61,63 +37,26 @@ const cleanValue = (value) => {
 
 // ======================================================
 // FORMAT RESPONSE
+//
+// The actual completion rule now lives inside:
+//
+// utils/providerProfileStatus.js
+//
+// This prevents Profile, Vacancy and Placement Request
+// from having different definitions of "complete".
 // ======================================================
 
 const formatProfileResponse = (register, profile) => {
-  const combinedProfile = {
-    registerId: register.registerId,
-
-    name: register.name,
-
-    companyName: profile.company_name || register.companyName || null,
-
-    email: register.email,
-
-    phone: profile.phone || null,
-
-    address: profile.address || null,
-
-    website: profile.website || null,
-
-    industry: profile.industry || null,
-
-    contact_person: profile.contact_person || null,
-
-    contact_person_phone: profile.contact_person_phone || null,
-
-    contact_person_email: profile.contact_person_email || null,
-
-    hiring_needs: profile.hiring_needs || null,
-
-    notes: profile.notes || null,
-
-    status: profile.status || null,
-
-    createdAt: profile.createdAt,
-
-    updatedAt: profile.updatedAt,
-  };
-
-  const missingFields = REQUIRED_PROFILE_FIELDS.filter(({ field }) => {
-    const value = combinedProfile[field];
-
-    return value === null || value === undefined || value === "";
-  });
-
-  const completed = REQUIRED_PROFILE_FIELDS.length - missingFields.length;
-
-  const completionPercentage = Math.round(
-    (completed / REQUIRED_PROFILE_FIELDS.length) * 100,
-  );
+  const profileStatus = calculateProviderProfileCompletion(register, profile);
 
   return {
-    is_complete: missingFields.length === 0,
+    is_complete: profileStatus.isComplete,
 
-    completion_percentage: completionPercentage,
+    completion_percentage: profileStatus.completionPercentage,
 
-    missing_fields: missingFields,
+    missing_fields: profileStatus.missingFields,
 
-    profile: combinedProfile,
+    profile: profileStatus.profile,
   };
 };
 
@@ -133,6 +72,7 @@ exports.getProfile = async (req, res) => {
     if (!registerId) {
       return res.status(401).json({
         status: "error",
+
         message: "Provider authentication required",
       });
     }
@@ -144,6 +84,7 @@ exports.getProfile = async (req, res) => {
     if (!register) {
       return res.status(404).json({
         status: "error",
+
         message: "Provider account not found",
       });
     }
@@ -151,6 +92,13 @@ exports.getProfile = async (req, res) => {
     let profile = await Profile.findOne({
       registerId,
     });
+
+    // ==================================================
+    // BACKWARD COMPATIBILITY
+    //
+    // Older Providers may not have a Profile document.
+    // Create one automatically from Register information.
+    // ==================================================
 
     if (!profile) {
       profile = await Profile.create({
@@ -178,6 +126,7 @@ exports.getProfile = async (req, res) => {
 
     return res.status(500).json({
       status: "error",
+
       message: "Failed to load provider profile",
     });
   }
@@ -195,6 +144,7 @@ exports.updateProfile = async (req, res) => {
     if (!registerId) {
       return res.status(401).json({
         status: "error",
+
         message: "Provider authentication required",
       });
     }
@@ -206,13 +156,14 @@ exports.updateProfile = async (req, res) => {
     if (!register) {
       return res.status(404).json({
         status: "error",
+
         message: "Provider account not found",
       });
     }
 
-    // --------------------------------------------------
-    // Update account-level company name
-    // --------------------------------------------------
+    // ==================================================
+    // UPDATE ACCOUNT-LEVEL COMPANY NAME
+    // ==================================================
 
     if (req.body.companyName !== undefined) {
       register.companyName = cleanValue(req.body.companyName);
@@ -220,9 +171,9 @@ exports.updateProfile = async (req, res) => {
 
     await register.save();
 
-    // --------------------------------------------------
-    // Find/create profile
-    // --------------------------------------------------
+    // ==================================================
+    // FIND / CREATE PROFILE
+    // ==================================================
 
     let profile = await Profile.findOne({
       registerId,
@@ -234,16 +185,19 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    // Always synchronize account fields
+    // ==================================================
+    // ALWAYS SYNCHRONIZE REGISTER FIELDS
+    // ==================================================
+
     profile.name = register.name;
 
     profile.company_name = register.companyName;
 
     profile.email = register.email;
 
-    // --------------------------------------------------
-    // Profile fields
-    // --------------------------------------------------
+    // ==================================================
+    // PROFILE FIELDS
+    // ==================================================
 
     PROFILE_UPDATE_FIELDS.forEach((field) => {
       if (req.body[field] !== undefined) {
@@ -252,6 +206,10 @@ exports.updateProfile = async (req, res) => {
     });
 
     await profile.save();
+
+    // ==================================================
+    // CALCULATE FRESH COMPLETION STATUS
+    // ==================================================
 
     const profileData = formatProfileResponse(register, profile);
 
@@ -270,12 +228,14 @@ exports.updateProfile = async (req, res) => {
 
       return res.status(400).json({
         status: "error",
+
         message: firstError.message,
       });
     }
 
     return res.status(500).json({
       status: "error",
+
       message: "Failed to update provider profile",
     });
   }
