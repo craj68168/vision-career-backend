@@ -10,6 +10,10 @@ const Recruit = require("../../models/providers/recruitSchema");
 
 const Provider = require("../../models/providers/registerSchema");
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 const SEEKER_VISIBLE_STATUSES = ["CONFIRMED", "COMPLETED", "CANCELLED"];
 
 const normalizeString = (value) => {
@@ -191,7 +195,11 @@ exports.getMyInterviews = async (req, res) => {
       return res.status(401).json({
         success: false,
 
-        message: "Seeker authentication required.",
+        message: t(
+          req,
+          "Seeker authentication required.",
+          "求職者認証が必要です。",
+        ),
       });
     }
 
@@ -210,7 +218,11 @@ exports.getMyInterviews = async (req, res) => {
         return res.status(400).json({
           success: false,
 
-          message: "Invalid interview status.",
+          message: t(
+            req,
+            "Invalid interview status.",
+            "面接ステータスが正しくありません。",
+          ),
         });
       }
 
@@ -280,7 +292,7 @@ exports.getMyInterviews = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to load interviews.",
+      message: t(req, "Failed to load interviews.", "面接一覧の読み込みに失敗しました。"),
     });
   }
 };
@@ -299,7 +311,11 @@ exports.getMyInterviewById = async (req, res) => {
       return res.status(401).json({
         success: false,
 
-        message: "Seeker authentication required.",
+        message: t(
+          req,
+          "Seeker authentication required.",
+          "求職者認証が必要です。",
+        ),
       });
     }
 
@@ -317,7 +333,7 @@ exports.getMyInterviewById = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Interview not found.",
+        message: t(req, "Interview not found.", "面接情報が見つかりません。"),
       });
     }
 
@@ -340,7 +356,7 @@ exports.getMyInterviewById = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to load interview.",
+      message: t(req, "Failed to load interview.", "面接情報の読み込みに失敗しました。"),
     });
   }
 };

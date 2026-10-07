@@ -1,5 +1,9 @@
 const Notification = require("../../models/notifications/notificationSchema");
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 // POSITIVE INTEGER
 // ======================================================
@@ -103,7 +107,11 @@ exports.getMyNotifications = async (req, res) => {
       return res.status(401).json({
         success: false,
 
-        message: "Seeker authentication required.",
+        message: t(
+          req,
+          "Seeker authentication required.",
+          "求職者認証が必要です。",
+        ),
       });
     }
 
@@ -192,7 +200,11 @@ exports.getMyNotifications = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to load notifications.",
+      message: t(
+        req,
+        "Failed to load notifications.",
+        "通知の読み込みに失敗しました。",
+      ),
     });
   }
 };
@@ -215,7 +227,11 @@ exports.markNotificationRead = async (req, res) => {
       return res.status(401).json({
         success: false,
 
-        message: "Seeker authentication required.",
+        message: t(
+          req,
+          "Seeker authentication required.",
+          "求職者認証が必要です。",
+        ),
       });
     }
 
@@ -235,7 +251,7 @@ exports.markNotificationRead = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Notification not found.",
+        message: t(req, "Notification not found.", "通知が見つかりません。"),
       });
     }
 
@@ -247,7 +263,11 @@ exports.markNotificationRead = async (req, res) => {
       return res.status(200).json({
         success: true,
 
-        message: "Notification is already read.",
+        message: t(
+          req,
+          "Notification is already read.",
+          "この通知は既に既読です。",
+        ),
 
         data: toSeekerNotification(notification),
       });
@@ -266,7 +286,11 @@ exports.markNotificationRead = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message: "Notification marked as read.",
+      message: t(
+        req,
+        "Notification marked as read.",
+        "通知を既読にしました。",
+      ),
 
       data: toSeekerNotification(notification),
     });
@@ -276,7 +300,11 @@ exports.markNotificationRead = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to update notification.",
+      message: t(
+        req,
+        "Failed to update notification.",
+        "通知の更新に失敗しました。",
+      ),
     });
   }
 };
@@ -297,7 +325,11 @@ exports.markAllNotificationsRead = async (req, res) => {
       return res.status(401).json({
         success: false,
 
-        message: "Seeker authentication required.",
+        message: t(
+          req,
+          "Seeker authentication required.",
+          "求職者認証が必要です。",
+        ),
       });
     }
 
@@ -327,7 +359,11 @@ exports.markAllNotificationsRead = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message: "All notifications marked as read.",
+      message: t(
+        req,
+        "All notifications marked as read.",
+        "すべての通知を既読にしました。",
+      ),
 
       data: {
         modifiedCount: result.modifiedCount || 0,
@@ -341,7 +377,11 @@ exports.markAllNotificationsRead = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to update notifications.",
+      message: t(
+        req,
+        "Failed to update notifications.",
+        "通知の更新に失敗しました。",
+      ),
     });
   }
 };

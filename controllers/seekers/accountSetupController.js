@@ -4,6 +4,10 @@ const crypto = require("crypto");
 
 const Seeker = require("../../models/seekers/seekerSchema");
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 // SET INITIAL PASSWORD
 //
@@ -37,7 +41,11 @@ exports.setInitialPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Setup token, password and confirm password are required.",
+        message: t(
+          req,
+          "Setup token, password and confirm password are required.",
+          "設定トークン、パスワード、確認用パスワードは必須です。",
+        ),
       });
     }
 
@@ -49,7 +57,7 @@ exports.setInitialPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Passwords do not match.",
+        message: t(req, "Passwords do not match.", "パスワードが一致しません。"),
       });
     }
 
@@ -61,7 +69,11 @@ exports.setInitialPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Password must be at least 8 characters.",
+        message: t(
+          req,
+          "Password must be at least 8 characters.",
+          "パスワードは8文字以上で入力してください。",
+        ),
       });
     }
 
@@ -98,7 +110,11 @@ exports.setInitialPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Password setup link is invalid or has expired.",
+        message: t(
+          req,
+          "Password setup link is invalid or has expired.",
+          "パスワード設定リンクが無効または期限切れです。",
+        ),
       });
     }
 
@@ -137,8 +153,11 @@ exports.setInitialPassword = async (req, res) => {
     return res.status(200).json({
       status: "success",
 
-      message:
+      message: t(
+        req,
         "Password created successfully. You can now sign in to your Vision Career account.",
+        "パスワードを作成しました。Vision Careerアカウントにログインできます。",
+      ),
     });
   } catch (error) {
     console.error("SET INITIAL SEEKER PASSWORD ERROR:", error);
@@ -146,7 +165,11 @@ exports.setInitialPassword = async (req, res) => {
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to create password.",
+      message: t(
+        req,
+        "Failed to create password.",
+        "パスワードの作成に失敗しました。",
+      ),
     });
   }
 };

@@ -22,6 +22,10 @@ const {
   sendApplicationResume,
 } = require("../../utils/applicationResumeStorage");
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 
 // GET START OF TODAY
@@ -545,7 +549,7 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(400).json({
         success: false,
 
-        message: "vacancyId is required.",
+        message: t(req, "vacancyId is required.", "求人IDは必須です。"),
       });
     }
 
@@ -563,7 +567,7 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Job Seeker not found.",
+        message: t(req, "Job Seeker not found.", "求職者が見つかりません。"),
       });
     }
 
@@ -582,8 +586,16 @@ exports.applyForVacancy = async (req, res) => {
         status: "NOT_PLACEMENT_ELIGIBLE",
 
         message: !placementEligibility.profile.isComplete
-          ? "Please complete your profile before applying for vacancies."
-          : "Your account is not currently eligible to apply for vacancies.",
+          ? t(
+              req,
+              "Please complete your profile before applying for vacancies.",
+              "求人に応募する前にプロフィールを完成させてください。",
+            )
+          : t(
+              req,
+              "Your account is not currently eligible to apply for vacancies.",
+              "現在、このアカウントでは求人に応募できません。",
+            ),
 
         data: {
           placement_eligible: false,
@@ -616,7 +628,7 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Vacancy not found.",
+        message: t(req, "Vacancy not found.", "求人情報が見つかりません。"),
       });
     }
 
@@ -630,7 +642,11 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(400).json({
         success: false,
 
-        message: "This vacancy is not currently available for applications.",
+        message: t(
+          req,
+          "This vacancy is not currently available for applications.",
+          "この求人は現在応募できません。",
+        ),
       });
     }
 
@@ -649,7 +665,11 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(400).json({
         success: false,
 
-        message: "The application deadline for this vacancy has passed.",
+        message: t(
+          req,
+          "The application deadline for this vacancy has passed.",
+          "この求人の応募期限は終了しています。",
+        ),
       });
     }
 
@@ -665,7 +685,11 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(500).json({
         success: false,
 
-        message: "Vacancy provider information is missing.",
+        message: t(
+          req,
+          "Vacancy provider information is missing.",
+          "求人企業情報が見つかりません。",
+        ),
       });
     }
 
@@ -685,7 +709,11 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(409).json({
         success: false,
 
-        message: "You have already applied for this vacancy.",
+        message: t(
+          req,
+          "You have already applied for this vacancy.",
+          "この求人には既に応募済みです。",
+        ),
       });
     }
 
@@ -794,8 +822,11 @@ exports.applyForVacancy = async (req, res) => {
     return res.status(201).json({
       success: true,
 
-      message:
+      message: t(
+        req,
         "Application submitted successfully and is pending admin review.",
+        "応募を送信しました。管理者の確認待ちです。",
+      ),
 
       data: {
         applicationId: application.application_id,
@@ -846,7 +877,11 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(409).json({
         success: false,
 
-        message: "You have already applied for this vacancy.",
+        message: t(
+          req,
+          "You have already applied for this vacancy.",
+          "この求人には既に応募済みです。",
+        ),
       });
     }
 
@@ -860,14 +895,18 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(400).json({
         success: false,
 
-        message: error.message,
+        message: t(
+          req,
+          "Please check your application and try again.",
+          "応募内容を確認してもう一度お試しください。",
+        ),
       });
     }
 
     return res.status(500).json({
       success: false,
 
-      message: "Failed to submit application.",
+      message: t(req, "Failed to submit application.", "応募の送信に失敗しました。"),
     });
   }
 };
@@ -936,7 +975,7 @@ exports.getMyApplications = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to get applications.",
+      message: t(req, "Failed to get applications.", "応募一覧の取得に失敗しました。"),
     });
   }
 };
@@ -967,7 +1006,7 @@ exports.getMyApplicationById = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Application not found.",
+        message: t(req, "Application not found.", "応募情報が見つかりません。"),
       });
     }
 
@@ -990,7 +1029,7 @@ exports.getMyApplicationById = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to get application.",
+      message: t(req, "Failed to get application.", "応募情報の取得に失敗しました。"),
     });
   }
 };
@@ -1023,7 +1062,7 @@ exports.getMyApplicationResume = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Application not found.",
+        message: t(req, "Application not found.", "応募情報が見つかりません。"),
       });
     }
 
@@ -1039,7 +1078,11 @@ exports.getMyApplicationResume = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "No resume is attached to this application.",
+        message: t(
+          req,
+          "No resume is attached to this application.",
+          "この応募には履歴書が添付されていません。",
+        ),
       });
     }
 
@@ -1085,10 +1128,22 @@ exports.getMyApplicationResume = async (req, res) => {
 
       message:
         statusCode === 404
-          ? "Application resume file not found."
+          ? t(
+              req,
+              "Application resume file not found.",
+              "応募時の履歴書ファイルが見つかりません。",
+            )
           : statusCode === 403
-            ? "Application resume access denied."
-            : "Failed to get application resume.",
+            ? t(
+                req,
+                "Application resume access denied.",
+                "応募時の履歴書にアクセスできません。",
+              )
+            : t(
+                req,
+                "Failed to get application resume.",
+                "応募時の履歴書の取得に失敗しました。",
+              ),
     });
   }
 };

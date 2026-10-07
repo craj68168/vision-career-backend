@@ -8,6 +8,8 @@ const Seeker = require("../../models/seekers/seekerSchema");
 
 const sendEmail = require("../../utils/send-email");
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
 // ======================================================
 
 // GENERATE SEEKER ID
@@ -40,6 +42,8 @@ const generateToken = (seekerId) => {
   );
 };
 
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 
 // REGISTER SEEKER
@@ -62,7 +66,11 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Name, email, phone number and password are required",
+        message: t(
+          req,
+          "Name, email, phone number and password are required",
+          "名前、メールアドレス、電話番号、パスワードは必須です",
+        ),
       });
     }
 
@@ -86,7 +94,11 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Please enter a valid email address",
+        message: t(
+          req,
+          "Please enter a valid email address",
+          "有効なメールアドレスを入力してください",
+        ),
       });
     }
 
@@ -110,7 +122,11 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Please enter a valid phone number",
+        message: t(
+          req,
+          "Please enter a valid phone number",
+          "有効な電話番号を入力してください",
+        ),
       });
     }
 
@@ -124,7 +140,11 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Password must be at least 8 characters",
+        message: t(
+          req,
+          "Password must be at least 8 characters",
+          "パスワードは8文字以上で入力してください",
+        ),
       });
     }
 
@@ -142,7 +162,11 @@ exports.register = async (req, res) => {
       return res.status(409).json({
         status: "error",
 
-        message: "An account with this email already exists",
+        message: t(
+          req,
+          "An account with this email already exists",
+          "このメールアドレスのアカウントは既に存在します",
+        ),
       });
     }
 
@@ -199,8 +223,11 @@ exports.register = async (req, res) => {
     return res.status(201).json({
       status: "success",
 
-      message:
+      message: t(
+        req,
         "Registration successful. Your account is pending admin approval.",
+        "登録が完了しました。アカウントは管理者の承認待ちです。",
+      ),
 
       user: {
         seeker_id: seeker.seeker_id,
@@ -223,7 +250,11 @@ exports.register = async (req, res) => {
       return res.status(409).json({
         status: "error",
 
-        message: "An account with this email or seeker ID already exists",
+        message: t(
+          req,
+          "An account with this email or seeker ID already exists",
+          "このメールアドレスまたは求職者IDのアカウントは既に存在します",
+        ),
       });
     }
 
@@ -231,14 +262,22 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: error.message,
+        message: t(
+          req,
+          "Please check your input and try again.",
+          "入力内容を確認してもう一度お試しください。",
+        ),
       });
     }
 
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to register seeker",
+      message: t(
+        req,
+        "Failed to register seeker",
+        "求職者の登録に失敗しました",
+      ),
     });
   }
 };
@@ -265,7 +304,11 @@ exports.login = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Email and password are required",
+        message: t(
+          req,
+          "Email and password are required",
+          "メールアドレスとパスワードは必須です",
+        ),
       });
     }
 
@@ -297,7 +340,11 @@ exports.login = async (req, res) => {
       return res.status(401).json({
         status: "error",
 
-        message: "Invalid email or password",
+        message: t(
+          req,
+          "Invalid email or password",
+          "メールアドレスまたはパスワードが正しくありません",
+        ),
       });
     }
 
@@ -311,8 +358,11 @@ exports.login = async (req, res) => {
       return res.status(403).json({
         status: "password_setup_required",
 
-        message:
+        message: t(
+          req,
           "Your account has been created. Please set your password using the link sent to your email.",
+          "アカウントが作成されています。メールに送信されたリンクからパスワードを設定してください。",
+        ),
 
         user: {
           seeker_id: seeker.seeker_id,
@@ -340,7 +390,11 @@ exports.login = async (req, res) => {
       return res.status(401).json({
         status: "error",
 
-        message: "Invalid email or password",
+        message: t(
+          req,
+          "Invalid email or password",
+          "メールアドレスまたはパスワードが正しくありません",
+        ),
       });
     }
 
@@ -354,7 +408,11 @@ exports.login = async (req, res) => {
       return res.status(403).json({
         status: "pending_approval",
 
-        message: "Your account is waiting for admin approval.",
+        message: t(
+          req,
+          "Your account is waiting for admin approval.",
+          "アカウントは管理者の承認待ちです。",
+        ),
 
         user: {
           seeker_id: seeker.seeker_id,
@@ -381,7 +439,12 @@ exports.login = async (req, res) => {
         status: "rejected",
 
         message:
-          seeker.rejection_reason || "Your registration has been rejected.",
+          seeker.rejection_reason ||
+          t(
+            req,
+            "Your registration has been rejected.",
+            "登録申請は却下されました。",
+          ),
       });
     }
 
@@ -395,7 +458,11 @@ exports.login = async (req, res) => {
       return res.status(403).json({
         status: "suspended",
 
-        message: "Your account has been suspended. Please contact support.",
+        message: t(
+          req,
+          "Your account has been suspended. Please contact support.",
+          "アカウントは停止されています。サポートにお問い合わせください。",
+        ),
       });
     }
 
@@ -409,7 +476,11 @@ exports.login = async (req, res) => {
       return res.status(403).json({
         status: "inactive",
 
-        message: "Your account is currently inactive.",
+        message: t(
+          req,
+          "Your account is currently inactive.",
+          "アカウントは現在無効です。",
+        ),
       });
     }
 
@@ -430,7 +501,7 @@ exports.login = async (req, res) => {
     return res.status(200).json({
       status: "success",
 
-      message: "Login successful",
+      message: t(req, "Login successful", "ログインしました"),
 
       token,
 
@@ -452,7 +523,7 @@ exports.login = async (req, res) => {
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to login",
+      message: t(req, "Failed to login", "ログインに失敗しました"),
     });
   }
 };
@@ -473,7 +544,7 @@ exports.forgotPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Email is required",
+        message: t(req, "Email is required", "メールアドレスは必須です"),
       });
     }
 
@@ -493,8 +564,11 @@ exports.forgotPassword = async (req, res) => {
       return res.status(200).json({
         status: "success",
 
-        message:
+        message: t(
+          req,
           "If this email is registered, a verification code has been sent.",
+          "このメールアドレスが登録されている場合、確認コードを送信しました。",
+        ),
       });
     }
 
@@ -563,8 +637,11 @@ exports.forgotPassword = async (req, res) => {
     return res.status(200).json({
       status: "success",
 
-      message:
+      message: t(
+        req,
         "If this email is registered, a verification code has been sent.",
+        "このメールアドレスが登録されている場合、確認コードを送信しました。",
+      ),
     });
   } catch (error) {
     console.error(
@@ -576,7 +653,11 @@ exports.forgotPassword = async (req, res) => {
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to process password reset request",
+      message: t(
+        req,
+        "Failed to process password reset request",
+        "パスワードリセットの処理に失敗しました",
+      ),
     });
   }
 };
@@ -597,7 +678,11 @@ exports.verifyResetCode = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Email and verification code are required",
+        message: t(
+          req,
+          "Email and verification code are required",
+          "メールアドレスと確認コードは必須です",
+        ),
       });
     }
 
@@ -625,7 +710,11 @@ exports.verifyResetCode = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Invalid or expired verification code",
+        message: t(
+          req,
+          "Invalid or expired verification code",
+          "確認コードが無効または期限切れです",
+        ),
       });
     }
 
@@ -645,7 +734,11 @@ exports.verifyResetCode = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Verification code has expired",
+        message: t(
+          req,
+          "Verification code has expired",
+          "確認コードの有効期限が切れています",
+        ),
       });
     }
 
@@ -655,7 +748,11 @@ exports.verifyResetCode = async (req, res) => {
       return res.status(429).json({
         status: "error",
 
-        message: "Too many incorrect attempts. Please request a new code.",
+        message: t(
+          req,
+          "Too many incorrect attempts. Please request a new code.",
+          "入力回数が上限を超えました。新しいコードをリクエストしてください。",
+        ),
       });
     }
 
@@ -679,7 +776,7 @@ exports.verifyResetCode = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Invalid verification code",
+        message: t(req, "Invalid verification code", "確認コードが正しくありません"),
       });
     }
 
@@ -724,7 +821,7 @@ exports.verifyResetCode = async (req, res) => {
     return res.status(200).json({
       status: "success",
 
-      message: "Verification successful",
+      message: t(req, "Verification successful", "確認が完了しました"),
 
       reset_token: resetToken,
     });
@@ -738,7 +835,11 @@ exports.verifyResetCode = async (req, res) => {
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to verify reset code",
+      message: t(
+        req,
+        "Failed to verify reset code",
+        "リセットコードの確認に失敗しました",
+      ),
     });
   }
 };
@@ -765,7 +866,11 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Reset token, password and confirm password are required",
+        message: t(
+          req,
+          "Reset token, password and confirm password are required",
+          "リセットトークン、パスワード、確認用パスワードは必須です",
+        ),
       });
     }
 
@@ -773,7 +878,7 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Passwords do not match",
+        message: t(req, "Passwords do not match", "パスワードが一致しません"),
       });
     }
 
@@ -781,7 +886,11 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Password must be at least 8 characters",
+        message: t(
+          req,
+          "Password must be at least 8 characters",
+          "パスワードは8文字以上で入力してください",
+        ),
       });
     }
 
@@ -809,7 +918,11 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({
         status: "error",
 
-        message: "Reset session is invalid or has expired",
+        message: t(
+          req,
+          "Reset session is invalid or has expired",
+          "リセットセッションが無効または期限切れです",
+        ),
       });
     }
 
@@ -837,8 +950,16 @@ exports.resetPassword = async (req, res) => {
       status: "success",
 
       message: wasPasswordSetupRequired
-        ? "Password set successfully. You can now login to your account."
-        : "Password reset successfully. Please login with your new password.",
+        ? t(
+            req,
+            "Password set successfully. You can now login to your account.",
+            "パスワードを設定しました。アカウントにログインできます。",
+          )
+        : t(
+            req,
+            "Password reset successfully. Please login with your new password.",
+            "パスワードをリセットしました。新しいパスワードでログインしてください。",
+          ),
     });
   } catch (error) {
     console.error(
@@ -850,7 +971,11 @@ exports.resetPassword = async (req, res) => {
     return res.status(500).json({
       status: "error",
 
-      message: "Failed to reset password",
+      message: t(
+        req,
+        "Failed to reset password",
+        "パスワードのリセットに失敗しました",
+      ),
     });
   }
 };
