@@ -5,31 +5,33 @@ const Staff = require("../../models/admin/staffSchema");
 const {
   STAFF_PERMISSIONS,
   ASSIGNABLE_STAFF_PERMISSIONS,
-  AUTOMATIC_STAFF_PERMISSIONS,
+  normalizeAssignableStaffPermissions,
 } = require("../../config/staffPermissions");
 
 // ======================================================
 // NORMALIZE PERMISSIONS
 //
-// dashboard:view and training:view are legacy automatic
-// permissions and should no longer be stored when a
-// Staff account is created or edited.
+// Automatic permissions:
+//
+// dashboard:view
+// training:view
+//
+// are never stored.
+//
+// Permission dependencies are automatically added.
+//
+// Example:
+//
+// vacancies:review
+//
+// becomes:
+//
+// vacancies:view
+// vacancies:review
 // ======================================================
 
 const normalizePermissions = (permissions = []) => {
-  if (!Array.isArray(permissions)) {
-    return [];
-  }
-
-  return [
-    ...new Set(
-      permissions.filter(
-        (permission) =>
-          STAFF_PERMISSIONS.includes(permission) &&
-          !AUTOMATIC_STAFF_PERMISSIONS.includes(permission),
-      ),
-    ),
-  ];
+  return normalizeAssignableStaffPermissions(permissions);
 };
 
 // ======================================================
@@ -51,8 +53,8 @@ const serializeStaff = (staff) => ({
 
   status: staff.status,
 
-  // Do not expose legacy automatic permissions to
-  // Admin permission-management UI.
+  // Dependencies are normalized before sending
+  // permissions back to the Admin UI.
   permissions: normalizePermissions(staff.permissions),
 
   createdByAdminId: staff.createdByAdminId,
@@ -145,6 +147,7 @@ exports.createStaff = async (req, res) => {
       });
     }
 
+    // Automatically add dependency permissions.
     const normalizedPermissions = normalizePermissions(permissions);
 
     // ==================================================
@@ -408,6 +411,21 @@ exports.updateStaff = async (req, res) => {
         });
       }
 
+      // ----------------------------------------------
+      // IMPORTANT
+      //
+      // Dependencies are automatically added here.
+      //
+      // Example:
+      //
+      // vacancies:review
+      //
+      // becomes:
+      //
+      // vacancies:view
+      // vacancies:review
+      // ----------------------------------------------
+
       staff.permissions = normalizePermissions(permissions);
     }
 
@@ -501,9 +519,10 @@ exports.getStaffPermissionOptions = async (req, res) => {
   return res.status(200).json({
     success: true,
 
-    // Only configurable permissions are returned.
+    // Only configurable permissions.
     //
-    // Dashboard / Training / Security are automatic.
+    // Dashboard and Training View are automatic.
+
     data: ASSIGNABLE_STAFF_PERMISSIONS,
   });
 };
