@@ -4,6 +4,7 @@ const {
   createVacancy,
   getAllVacancies,
   getPublicVacancies,
+  getPublicVacancyById,
   getVacancyById,
   updateVacancy,
   deleteVacancy,
@@ -47,6 +48,7 @@ router.get("/", providerAuth, getAllVacancies);
 // ======================================================
 
 router.get("/public", getPublicVacancies);
+router.get("/public/:id", getPublicVacancyById);
 
 // ======================================================
 // ADMIN STATUS

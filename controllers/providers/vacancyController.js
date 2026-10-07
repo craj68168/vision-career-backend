@@ -106,6 +106,8 @@ const buildVacancyPayload = (body) => {
 const toPublicVacancy = (vacancy) => ({
   vacancyId: vacancy.vacancyId,
 
+  companyName: vacancy.companyName,
+
   title: vacancy.title,
 
   titleKana: vacancy.titleKana,
@@ -302,12 +304,25 @@ exports.getAllVacancies = async (req, res) => {
 // GET /api/providers/vacancies/public
 // ======================================================
 
+const getTodayStartUTC = () => {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return today;
+};
+
 exports.getPublicVacancies = async (req, res) => {
   try {
+    const todayStart = getTodayStartUTC();
+
     const data = await Vacancy.find({
       status: "published",
 
       isPublished: true,
+
+      $or: [
+        { applicationDeadline: null },
+        { applicationDeadline: { $gte: todayStart } },
+      ],
     }).sort({
       createdAt: -1,
     });
@@ -324,6 +339,41 @@ exports.getPublicVacancies = async (req, res) => {
       status: "error",
 
       message: "Failed to load vacancies",
+    });
+  }
+};
+
+exports.getPublicVacancyById = async (req, res) => {
+  try {
+    const todayStart = getTodayStartUTC();
+
+    const vacancy = await Vacancy.findOne({
+      vacancyId: req.params.id,
+      status: "published",
+      isPublished: true,
+      $or: [
+        { applicationDeadline: null },
+        { applicationDeadline: { $gte: todayStart } },
+      ],
+    });
+
+    if (!vacancy) {
+      return res.status(404).json({
+        status: "error",
+        message: "Vacancy not found",
+      });
+    }
+
+    return res.json({
+      status: "success",
+      data: toPublicVacancy(vacancy),
+    });
+  } catch (error) {
+    console.error("Get public vacancy error:", error);
+
+    return res.status(500).json({
+      status: "error",
+      message: "Failed to load vacancy",
     });
   }
 };
