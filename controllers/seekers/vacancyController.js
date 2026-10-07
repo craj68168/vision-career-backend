@@ -2,6 +2,10 @@ const Vacancy = require("../../models/providers/vacancySchema");
 
 const Application = require("../../models/applications/applicationSchema");
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 // GET START OF TODAY
 // ======================================================
@@ -242,7 +246,7 @@ exports.getPublishedVacancies = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to get vacancies.",
+      message: t(req, "Failed to get vacancies.", "求人情報の取得に失敗しました。"),
     });
   }
 };
@@ -274,7 +278,7 @@ exports.getPublishedVacancyById = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: "Vacancy not found.",
+        message: t(req, "Vacancy not found.", "求人情報が見つかりません。"),
       });
     }
 
@@ -291,7 +295,11 @@ exports.getPublishedVacancyById = async (req, res) => {
       return res.status(410).json({
         success: false,
 
-        message: "The application deadline for this vacancy has passed.",
+        message: t(
+          req,
+          "The application deadline for this vacancy has passed.",
+          "この求人の応募期限は終了しています。",
+        ),
       });
     }
 
@@ -310,7 +318,7 @@ exports.getPublishedVacancyById = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: "Failed to get vacancy.",
+      message: t(req, "Failed to get vacancy.", "求人情報の取得に失敗しました。"),
     });
   }
 };

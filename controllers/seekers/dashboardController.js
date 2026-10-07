@@ -6,6 +6,10 @@ const Application = require(
   "../../models/applications/applicationSchema",
 );
 
+const { seekerMessage } = require("../../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
+
 // ======================================================
 // GET SEEKER DASHBOARD SUMMARY
 // GET /api/seekers/dashboard/summary
@@ -70,8 +74,11 @@ exports.getDashboardSummary = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
+      message: t(
+        req,
         "Failed to get dashboard summary.",
+        "ダッシュボード概要の取得に失敗しました。",
+      ),
     });
   }
 };

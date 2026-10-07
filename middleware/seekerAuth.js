@@ -1,5 +1,8 @@
 const jwt = require("jsonwebtoken");
 const Seeker = require("../models/seekers/seekerSchema");
+const { seekerMessage } = require("../utils/seekerMessages");
+
+const t = (req, en, ja) => seekerMessage(req, { en, ja });
 
 // ======================================================
 // SEEKER AUTHENTICATION
@@ -16,7 +19,11 @@ const seekerAuth = async (req, res, next) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         status: "error",
-        message: "Authorization token is required",
+        message: t(
+          req,
+          "Authorization token is required",
+          "認証トークンが必要です",
+        ),
       });
     }
 
@@ -29,7 +36,11 @@ const seekerAuth = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         status: "error",
-        message: "Authorization token is required",
+        message: t(
+          req,
+          "Authorization token is required",
+          "認証トークンが必要です",
+        ),
       });
     }
 
@@ -38,7 +49,11 @@ const seekerAuth = async (req, res, next) => {
 
       return res.status(500).json({
         status: "error",
-        message: "Authentication configuration error.",
+        message: t(
+          req,
+          "Authentication configuration error.",
+          "認証設定エラーが発生しました。",
+        ),
       });
     }
     // --------------------------------------------------
@@ -54,7 +69,7 @@ const seekerAuth = async (req, res, next) => {
     if (decoded.role !== "seeker" || !decoded.seeker_id) {
       return res.status(403).json({
         status: "error",
-        message: "Access denied",
+        message: t(req, "Access denied", "アクセスが拒否されました"),
       });
     }
 
@@ -69,7 +84,11 @@ const seekerAuth = async (req, res, next) => {
     if (!seeker) {
       return res.status(401).json({
         status: "error",
-        message: "Seeker account no longer exists",
+        message: t(
+          req,
+          "Seeker account no longer exists",
+          "求職者アカウントが存在しません",
+        ),
       });
     }
 
@@ -80,14 +99,22 @@ const seekerAuth = async (req, res, next) => {
     if (seeker.approval_status === "pending") {
       return res.status(403).json({
         status: "pending_approval",
-        message: "Your account is waiting for admin approval.",
+        message: t(
+          req,
+          "Your account is waiting for admin approval.",
+          "アカウントは管理者の承認待ちです。",
+        ),
       });
     }
 
     if (seeker.approval_status === "rejected") {
       return res.status(403).json({
         status: "rejected",
-        message: "Your account has been rejected.",
+        message: t(
+          req,
+          "Your account has been rejected.",
+          "アカウントは却下されました。",
+        ),
       });
     }
 
@@ -98,14 +125,22 @@ const seekerAuth = async (req, res, next) => {
     if (seeker.account_status === "suspended") {
       return res.status(403).json({
         status: "suspended",
-        message: "Your account has been suspended. Please contact support.",
+        message: t(
+          req,
+          "Your account has been suspended. Please contact support.",
+          "アカウントは停止されています。サポートにお問い合わせください。",
+        ),
       });
     }
 
     if (seeker.account_status !== "active") {
       return res.status(403).json({
         status: "inactive",
-        message: "Your account is currently inactive.",
+        message: t(
+          req,
+          "Your account is currently inactive.",
+          "アカウントは現在無効です。",
+        ),
       });
     }
 
@@ -125,20 +160,20 @@ const seekerAuth = async (req, res, next) => {
     if (error.name === "TokenExpiredError") {
       return res.status(401).json({
         status: "error",
-        message: "Token has expired",
+        message: t(req, "Token has expired", "トークンの有効期限が切れています"),
       });
     }
 
     if (error.name === "JsonWebTokenError") {
       return res.status(401).json({
         status: "error",
-        message: "Invalid token",
+        message: t(req, "Invalid token", "トークンが無効です"),
       });
     }
 
     return res.status(500).json({
       status: "error",
-      message: "Authentication failed",
+      message: t(req, "Authentication failed", "認証に失敗しました"),
     });
   }
 };
