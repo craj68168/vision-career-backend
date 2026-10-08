@@ -2,6 +2,8 @@ const crypto = require("crypto");
 
 const Recruit = require("../../models/providers/recruitSchema");
 
+const Register = require("../../models/providers/registerSchema");
+
 // ======================================================
 // GENERATE ID
 // ======================================================
@@ -44,7 +46,143 @@ const EDITABLE_FIELDS = [
 ];
 
 // ======================================================
+// PROVIDER-SAFE SERIALIZER
+//
+// IMPORTANT:
+//
+// Provider must NOT receive internal Vision Career
+// audit information.
+//
+// Never expose:
+//
+// - workflow_history
+// - reviewed_by_role
+// - reviewed_by_id
+// - staff_screening_status
+// - staff_screening_note
+// - screened_by_staff_id
+// - screened_at
+//
+// Provider MAY see:
+//
+// - current status
+// - rejection reason
+// - reviewed timestamp
+//
+// because they need those to understand their request
+// workflow.
+//
+// ======================================================
+
+const serializeProviderRecruit = (recruit) => {
+  if (!recruit) {
+    return null;
+  }
+
+  const raw =
+    typeof recruit.toObject === "function"
+      ? recruit.toObject()
+      : { ...recruit };
+
+  return {
+    _id: raw._id,
+
+    recruitId: raw.recruitId,
+
+    company_id: raw.company_id,
+
+    // ==================================================
+    // JOB
+    // ==================================================
+
+    job_title: raw.job_title,
+
+    job_category: raw.job_category,
+
+    employment_type: raw.employment_type,
+
+    number_of_positions: raw.number_of_positions,
+
+    work_location: raw.work_location,
+
+    job_description: raw.job_description,
+
+    requirements: raw.requirements,
+
+    japanese_level_required: raw.japanese_level_required,
+
+    visa_type_required: raw.visa_type_required,
+
+    // ==================================================
+    // CONDITIONS
+    // ==================================================
+
+    salary_type: raw.salary_type,
+
+    salary_amount: raw.salary_amount,
+
+    working_hours: raw.working_hours,
+
+    days_off: raw.days_off,
+
+    start_date: raw.start_date,
+
+    // ==================================================
+    // PROVIDER-VISIBLE WORKFLOW
+    // ==================================================
+
+    status: raw.status,
+
+    submitted_at: raw.submitted_at,
+
+    reviewed_at: raw.reviewed_at,
+
+    rejection_reason: raw.rejection_reason,
+
+    // ==================================================
+    // TIMESTAMPS
+    // ==================================================
+
+    createdAt: raw.createdAt,
+
+    updatedAt: raw.updatedAt,
+  };
+};
+
+// ======================================================
+// CURRENT PROVIDER ACTOR
+//
+// Used only when writing internal audit history.
+//
+// The Provider still does NOT receive that history.
+// ======================================================
+
+const getCurrentProviderActor = async (registerId) => {
+  if (!registerId) {
+    return {
+      id: null,
+      name: "Provider",
+    };
+  }
+
+  const provider = await Register.findOne({
+    registerId,
+
+    role: "provider",
+  })
+    .select("registerId name companyName")
+    .lean();
+
+  return {
+    id: registerId,
+
+    name: provider?.name || provider?.companyName || "Provider",
+  };
+};
+
+// ======================================================
 // CREATE
+//
 // POST /api/providers/recruits
 // ======================================================
 
@@ -74,14 +212,17 @@ exports.createRecruit = async (req, res) => {
 
     return res.status(201).json({
       success: true,
+
       message: "Placement request created as draft.",
-      data: recruit,
+
+      data: serializeProviderRecruit(recruit),
     });
   } catch (error) {
     console.error("CREATE PLACEMENT REQUEST ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: "Failed to create placement request.",
     });
   }
@@ -89,24 +230,40 @@ exports.createRecruit = async (req, res) => {
 
 // ======================================================
 // GET ALL
+//
+// GET /api/providers/recruits
+//
+// workflow_history has select:false in the model,
+// but we also serialize explicitly so internal fields
+// cannot accidentally leak.
+//
 // ======================================================
 
 exports.getAllRecruits = async (req, res) => {
   try {
-    const data = await Recruit.find({
+    const recruits = await Recruit.find({
       company_id: req.registerId,
-    }).sort({
-      createdAt: -1,
-    });
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
+
+    const data = recruits.map(serializeProviderRecruit);
 
     return res.status(200).json({
       success: true,
+
       count: data.length,
+
       data,
     });
   } catch (error) {
+    console.error("GET PROVIDER PLACEMENT REQUESTS ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: "Failed to load placement requests.",
     });
   }
@@ -114,29 +271,37 @@ exports.getAllRecruits = async (req, res) => {
 
 // ======================================================
 // GET ONE
+//
+// GET /api/providers/recruits/:recruitId
 // ======================================================
 
 exports.getRecruitById = async (req, res) => {
   try {
-    const data = await Recruit.findOne({
+    const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
-      company_id: req.registerId,
-    });
 
-    if (!data) {
+      company_id: req.registerId,
+    }).lean();
+
+    if (!recruit) {
       return res.status(404).json({
         success: false,
+
         message: "Placement request not found.",
       });
     }
 
     return res.status(200).json({
       success: true,
-      data,
+
+      data: serializeProviderRecruit(recruit),
     });
   } catch (error) {
+    console.error("GET PROVIDER PLACEMENT REQUEST ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: "Failed to load placement request.",
     });
   }
@@ -144,19 +309,45 @@ exports.getRecruitById = async (req, res) => {
 
 // ======================================================
 // UPDATE
+//
 // PUT /api/providers/recruits/:recruitId
+//
+// Allowed:
+//
+// draft
+// rejected
+//
+// IMPORTANT:
+//
+// Editing a rejected request DOES NOT erase the previous
+// rejection decision.
+//
+// The request remains rejected until the Provider clicks
+// Resubmit.
+//
+// That preserves:
+//
+// - rejection_reason
+// - reviewed_at
+// - reviewed_by_role
+// - reviewed_by_id
+//
+// until actual resubmission.
+//
 // ======================================================
 
 exports.updateRecruit = async (req, res) => {
   try {
     const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
+
       company_id: req.registerId,
     });
 
     if (!recruit) {
       return res.status(404).json({
         success: false,
+
         message: "Placement request not found.",
       });
     }
@@ -164,6 +355,7 @@ exports.updateRecruit = async (req, res) => {
     if (!["draft", "rejected"].includes(recruit.status)) {
       return res.status(409).json({
         success: false,
+
         message: "Only draft or rejected placement requests can be edited.",
       });
     }
@@ -174,27 +366,36 @@ exports.updateRecruit = async (req, res) => {
       }
     });
 
-    // Editing rejected request prepares it
-    // for resubmission.
-    if (recruit.status === "rejected") {
-      recruit.rejection_reason = null;
+    // ==================================================
+    // DO NOT CLEAR REJECTION AUDIT HERE
+    //
+    // A rejected request is still rejected while the
+    // Provider is editing it.
+    //
+    // We only clear the CURRENT review state when the
+    // Provider actually resubmits.
+    //
+    // Historical audit entries remain permanently.
+    // ==================================================
 
-      recruit.reviewed_at = null;
-
-      recruit.reviewed_by_role = null;
-
-      recruit.reviewed_by_id = null;
-    }
     await recruit.save();
 
     return res.status(200).json({
       success: true,
-      message: "Placement request updated.",
-      data: recruit,
+
+      message:
+        recruit.status === "rejected"
+          ? "Placement request updated. Resubmit it when the changes are ready for review."
+          : "Placement request updated.",
+
+      data: serializeProviderRecruit(recruit),
     });
   } catch (error) {
+    console.error("UPDATE PLACEMENT REQUEST ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: "Failed to update placement request.",
     });
   }
@@ -202,19 +403,42 @@ exports.updateRecruit = async (req, res) => {
 
 // ======================================================
 // SUBMIT / RESUBMIT
+//
 // PATCH /api/providers/recruits/:recruitId/submit
+//
+// draft:
+//   draft -> pending_review
+//
+// rejected:
+//   rejected -> pending_review
+//   + RESUBMITTED audit entry
+//
 // ======================================================
 
 exports.submitRecruit = async (req, res) => {
   try {
+    // ==================================================
+    // IMPORTANT:
+    //
+    // workflow_history is select:false in the schema.
+    //
+    // We explicitly select it here because this operation
+    // needs to APPEND the RESUBMITTED audit event.
+    //
+    // We still use serializeProviderRecruit() in the
+    // response, so the Provider never receives it.
+    // ==================================================
+
     const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
+
       company_id: req.registerId,
-    });
+    }).select("+workflow_history");
 
     if (!recruit) {
       return res.status(404).json({
         success: false,
+
         message: "Placement request not found.",
       });
     }
@@ -222,9 +446,14 @@ exports.submitRecruit = async (req, res) => {
     if (!["draft", "rejected"].includes(recruit.status)) {
       return res.status(409).json({
         success: false,
+
         message: "This placement request cannot be submitted.",
       });
     }
+
+    // ==================================================
+    // VALIDATION
+    // ==================================================
 
     if (
       !recruit.job_title ||
@@ -234,14 +463,68 @@ exports.submitRecruit = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           "Job title, work location, job description and number of positions are required before submission.",
       });
     }
 
+    // ==================================================
+    // DETERMINE SUBMISSION TYPE
+    // ==================================================
+
+    const previousStatus = recruit.status;
+
+    const isResubmission = previousStatus === "rejected";
+
+    const now = new Date();
+
+    // ==================================================
+    // RESUBMISSION AUDIT
+    //
+    // Do this BEFORE clearing current rejection fields.
+    // ==================================================
+
+    if (isResubmission) {
+      const actor = await getCurrentProviderActor(req.registerId);
+
+      if (!Array.isArray(recruit.workflow_history)) {
+        recruit.workflow_history = [];
+      }
+
+      recruit.workflow_history.push({
+        action: "RESUBMITTED",
+
+        from_status: "rejected",
+
+        to_status: "pending_review",
+
+        actor_role: "provider",
+
+        actor_id: actor.id,
+
+        actor_name_snapshot: actor.name,
+
+        note: null,
+
+        created_at: now,
+      });
+    }
+
+    // ==================================================
+    // CURRENT WORKFLOW STATE
+    // ==================================================
+
     recruit.status = "pending_review";
 
-    recruit.submitted_at = new Date();
+    recruit.submitted_at = now;
+
+    // ==================================================
+    // CLEAR CURRENT FINAL DECISION
+    //
+    // Old decision remains permanently inside
+    // workflow_history.
+    // ==================================================
 
     recruit.reviewed_at = null;
 
@@ -250,13 +533,15 @@ exports.submitRecruit = async (req, res) => {
     recruit.reviewed_by_id = null;
 
     recruit.rejection_reason = null;
-    // ======================================================
-    // RESET STAFF SCREENING ON NEW SUBMISSION
+
+    // ==================================================
+    // RESET CURRENT STAFF SCREENING
     //
-    // A rejected request may have been edited by the
-    // Provider, so previous Staff screening must not be
-    // treated as the review of the new submission.
-    // ======================================================
+    // Previous screening remains in workflow_history.
+    //
+    // The modified/resubmitted request must be screened
+    // again as a new review cycle.
+    // ==================================================
 
     recruit.staff_screening_status = "NOT_SCREENED";
 
@@ -270,12 +555,19 @@ exports.submitRecruit = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Placement request submitted for Admin review.",
-      data: recruit,
+
+      message: isResubmission
+        ? "Placement request resubmitted for review."
+        : "Placement request submitted for review.",
+
+      data: serializeProviderRecruit(recruit),
     });
   } catch (error) {
+    console.error("SUBMIT PLACEMENT REQUEST ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: "Failed to submit placement request.",
     });
   }
@@ -283,18 +575,25 @@ exports.submitRecruit = async (req, res) => {
 
 // ======================================================
 // DELETE
+//
+// Existing behavior retained:
+//
+// draft / rejected only
+//
 // ======================================================
 
 exports.deleteRecruit = async (req, res) => {
   try {
     const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
+
       company_id: req.registerId,
     });
 
     if (!recruit) {
       return res.status(404).json({
         success: false,
+
         message: "Placement request not found.",
       });
     }
@@ -302,6 +601,7 @@ exports.deleteRecruit = async (req, res) => {
     if (!["draft", "rejected"].includes(recruit.status)) {
       return res.status(409).json({
         success: false,
+
         message: "Only draft or rejected placement requests can be deleted.",
       });
     }
@@ -310,11 +610,15 @@ exports.deleteRecruit = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
       message: "Placement request deleted.",
     });
   } catch (error) {
+    console.error("DELETE PLACEMENT REQUEST ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: "Failed to delete placement request.",
     });
   }

@@ -8,13 +8,28 @@ const PlacementCandidate = require("../../models/placements/placementCandidateSc
 
 const Recruit = require("../../models/providers/recruitSchema");
 
-const Provider = require("../../models/providers/registerSchema");
-
 const { seekerMessage } = require("../../utils/seekerMessages");
 
-const t = (req, en, ja) => seekerMessage(req, { en, ja });
+const {
+  SEEKER_EMPLOYER_LABEL,
+  toSeekerVisibleWorkLocation,
+} = require("../../utils/seekerPrivacy");
+
+const t = (req, en, ja) =>
+  seekerMessage(req, {
+    en,
+    ja,
+  });
+
+// ======================================================
+// SEEKER VISIBLE STATUSES
+// ======================================================
 
 const SEEKER_VISIBLE_STATUSES = ["CONFIRMED", "COMPLETED", "CANCELLED"];
+
+// ======================================================
+// NORMALIZE STRING
+// ======================================================
 
 const normalizeString = (value) => {
   if (typeof value !== "string") {
@@ -24,18 +39,35 @@ const normalizeString = (value) => {
   return value.trim();
 };
 
+// ======================================================
+// SOURCE TYPE
+// ======================================================
+
 const getSourceType = (interview) =>
   interview.source_type ||
   (interview.placement_candidate_id ? "PLACEMENT" : "APPLICATION");
 
-const toDisplayJob = ({ vacancy, recruit, provider }) => ({
+// ======================================================
+// SEEKER-SAFE JOB
+//
+// NEVER expose:
+//
+// - real Provider/company name
+// - Provider ID
+// - company phone
+// - company email
+// - contact person
+// - exact company location
+// ======================================================
+
+const toDisplayJob = ({ vacancy, recruit }) => ({
   vacancyId: vacancy?.vacancyId || null,
 
   recruitId: recruit?.recruitId || null,
 
-  companyName: vacancy?.companyName || provider?.companyName || null,
+  companyName: SEEKER_EMPLOYER_LABEL,
 
-  companyNameKana: vacancy?.companyNameKana || null,
+  companyNameKana: null,
 
   title: vacancy?.title || recruit?.job_title || null,
 
@@ -43,17 +75,25 @@ const toDisplayJob = ({ vacancy, recruit, provider }) => ({
 
   employmentType: vacancy?.employmentType || recruit?.employment_type || null,
 
-  workLocation: vacancy?.workLocation || recruit?.work_location || null,
+  workLocation: toSeekerVisibleWorkLocation(
+    vacancy?.workLocation || recruit?.work_location,
+  ),
 
   remoteWork: vacancy?.remoteWork || null,
 });
 
+// ======================================================
+// LOAD CONTEXT
+//
+// Provider record is intentionally not loaded.
+// ======================================================
+
 const loadContext = async ({ interview, seekerId }) => {
   const sourceType = getSourceType(interview);
 
-  const provider = await Provider.findOne({
-    registerId: interview.provider_id,
-  }).lean();
+  // ====================================================
+  // PLACEMENT
+  // ====================================================
 
   if (sourceType === "PLACEMENT") {
     const [placementCandidate, recruit] = await Promise.all([
@@ -70,13 +110,20 @@ const loadContext = async ({ interview, seekerId }) => {
 
     return {
       sourceType,
+
       application: null,
+
       vacancy: null,
+
       placementCandidate,
+
       recruit,
-      provider,
     };
   }
+
+  // ====================================================
+  // NORMAL APPLICATION
+  // ====================================================
 
   const [application, vacancy] = await Promise.all([
     Application.findOne({
@@ -92,13 +139,20 @@ const loadContext = async ({ interview, seekerId }) => {
 
   return {
     sourceType,
+
     application,
+
     vacancy,
+
     placementCandidate: null,
+
     recruit: null,
-    provider,
   };
 };
+
+// ======================================================
+// SEEKER INTERVIEW SERIALIZER
+// ======================================================
 
 const toSeekerInterview = ({
   interview,
@@ -106,7 +160,6 @@ const toSeekerInterview = ({
   vacancy,
   placementCandidate,
   recruit,
-  provider,
 }) => {
   const data = interview?.toObject ? interview.toObject() : interview;
 
@@ -117,7 +170,6 @@ const toSeekerInterview = ({
   const job = toDisplayJob({
     vacancy,
     recruit,
-    provider,
   });
 
   return {
@@ -163,7 +215,7 @@ const toSeekerInterview = ({
 
     updatedAt: data.updated_at,
 
-    // Keep "vacancy" for current frontend compatibility.
+    // Existing frontend compatibility.
     vacancy: job,
 
     placementRequest:
@@ -173,11 +225,11 @@ const toSeekerInterview = ({
 
             title: recruit?.job_title || null,
 
-            companyName: provider?.companyName || null,
+            companyName: SEEKER_EMPLOYER_LABEL,
 
             employmentType: recruit?.employment_type || null,
 
-            workLocation: recruit?.work_location || null,
+            workLocation: toSeekerVisibleWorkLocation(recruit?.work_location),
           }
         : null,
   };
@@ -197,7 +249,9 @@ exports.getMyInterviews = async (req, res) => {
 
         message: t(
           req,
+
           "Seeker authentication required.",
+
           "求職者認証が必要です。",
         ),
       });
@@ -220,7 +274,9 @@ exports.getMyInterviews = async (req, res) => {
 
           message: t(
             req,
+
             "Invalid interview status.",
+
             "面接ステータスが正しくありません。",
           ),
         });
@@ -232,7 +288,9 @@ exports.getMyInterviews = async (req, res) => {
     const interviews = await Interview.find(query)
       .sort({
         interview_date: 1,
+
         interview_time: 1,
+
         created_at: -1,
       })
       .lean();
@@ -242,12 +300,14 @@ exports.getMyInterviews = async (req, res) => {
     for (const interview of interviews) {
       const context = await loadContext({
         interview,
+
         seekerId,
       });
 
       data.push(
         toSeekerInterview({
           interview,
+
           ...context,
         }),
       );
@@ -280,7 +340,9 @@ exports.getMyInterviews = async (req, res) => {
 
       summary: {
         confirmed,
+
         completed,
+
         cancelled,
       },
 
@@ -292,7 +354,13 @@ exports.getMyInterviews = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to load interviews.", "面接一覧の読み込みに失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to load interviews.",
+
+        "面接一覧の読み込みに失敗しました。",
+      ),
     });
   }
 };
@@ -313,7 +381,9 @@ exports.getMyInterviewById = async (req, res) => {
 
         message: t(
           req,
+
           "Seeker authentication required.",
+
           "求職者認証が必要です。",
         ),
       });
@@ -333,12 +403,19 @@ exports.getMyInterviewById = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: t(req, "Interview not found.", "面接情報が見つかりません。"),
+        message: t(
+          req,
+
+          "Interview not found.",
+
+          "面接情報が見つかりません。",
+        ),
       });
     }
 
     const context = await loadContext({
       interview,
+
       seekerId,
     });
 
@@ -347,6 +424,7 @@ exports.getMyInterviewById = async (req, res) => {
 
       data: toSeekerInterview({
         interview,
+
         ...context,
       }),
     });
@@ -356,7 +434,13 @@ exports.getMyInterviewById = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to load interview.", "面接情報の読み込みに失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to load interview.",
+
+        "面接情報の読み込みに失敗しました。",
+      ),
     });
   }
 };

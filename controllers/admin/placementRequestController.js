@@ -2,97 +2,412 @@ const Recruit = require("../../models/providers/recruitSchema");
 
 const Register = require("../../models/providers/registerSchema");
 
+const Staff = require("../../models/admin/staffSchema");
+
+const Admin = require("../../models/admin/adminSchema");
+
+// ======================================================
+// NORMALIZE ACTOR ID
+// ======================================================
+
+const normalizeActorId = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  return String(value).trim().toUpperCase();
+};
+
+// ======================================================
+// RESOLVE ACTOR NAME
+// ======================================================
+
+const resolveActorName = ({ role, actorId, staffMap, adminMap, snapshot }) => {
+  if (snapshot) {
+    return snapshot;
+  }
+
+  const normalizedId = normalizeActorId(actorId);
+
+  if (!normalizedId) {
+    return null;
+  }
+
+  if (role === "staff") {
+    return staffMap.get(normalizedId)?.name || null;
+  }
+
+  if (role === "admin") {
+    return adminMap.get(normalizedId)?.username || null;
+  }
+
+  return null;
+};
+
+// ======================================================
+// BUILD ACTOR MAPS
+// ======================================================
+
+const getActorMaps = async (recruits) => {
+  const staffIds = new Set();
+
+  const adminIds = new Set();
+
+  recruits.forEach((recruit) => {
+    if (recruit.screened_by_staff_id) {
+      staffIds.add(normalizeActorId(recruit.screened_by_staff_id));
+    }
+
+    if (recruit.reviewed_by_role === "staff" && recruit.reviewed_by_id) {
+      staffIds.add(normalizeActorId(recruit.reviewed_by_id));
+    }
+
+    if (recruit.reviewed_by_role === "admin" && recruit.reviewed_by_id) {
+      adminIds.add(normalizeActorId(recruit.reviewed_by_id));
+    }
+
+    const history = Array.isArray(recruit.workflow_history)
+      ? recruit.workflow_history
+      : [];
+
+    history.forEach((item) => {
+      if (item.actor_role === "staff" && item.actor_id) {
+        staffIds.add(normalizeActorId(item.actor_id));
+      }
+
+      if (item.actor_role === "admin" && item.actor_id) {
+        adminIds.add(normalizeActorId(item.actor_id));
+      }
+    });
+  });
+
+  const normalizedStaffIds = [...staffIds].filter(Boolean);
+
+  const normalizedAdminIds = [...adminIds].filter(Boolean);
+
+  const [staffs, admins] = await Promise.all([
+    normalizedStaffIds.length
+      ? Staff.find({
+          staffId: {
+            $in: normalizedStaffIds,
+          },
+        })
+          .select("staffId name")
+          .lean()
+      : [],
+
+    normalizedAdminIds.length
+      ? Admin.find({
+          adminId: {
+            $in: normalizedAdminIds,
+          },
+        })
+          .select("adminId username")
+          .lean()
+      : [],
+  ]);
+
+  return {
+    staffMap: new Map(
+      staffs.map((staff) => [normalizeActorId(staff.staffId), staff]),
+    ),
+
+    adminMap: new Map(
+      admins.map((admin) => [normalizeActorId(admin.adminId), admin]),
+    ),
+  };
+};
+
+// ======================================================
+// GET CURRENT ADMIN ACTOR
+// ======================================================
+
+const getCurrentAdminActor = async (adminId) => {
+  if (!adminId) {
+    return {
+      id: null,
+      name: "Admin",
+    };
+  }
+
+  const admin = await Admin.findOne({
+    adminId,
+  })
+    .select("adminId username")
+    .lean();
+
+  return {
+    id: adminId,
+
+    name: admin?.username || "Admin",
+  };
+};
+
 // ======================================================
 // STAFF SCREENING SERIALIZER
 // ======================================================
 
-const serializeStaffScreening = (recruit) => ({
-  status: recruit.staff_screening_status || "NOT_SCREENED",
+const serializeStaffScreening = (recruit, staffMap = new Map()) => {
+  const staffId = recruit.screened_by_staff_id || null;
 
-  note: recruit.staff_screening_note || null,
+  return {
+    status: recruit.staff_screening_status || "NOT_SCREENED",
 
-  screenedByStaffId: recruit.screened_by_staff_id || null,
+    note: recruit.staff_screening_note || null,
 
-  screenedAt: recruit.screened_at || null,
-});
+    screenedByStaffId: staffId,
+
+    screenedByStaffName: staffId
+      ? staffMap.get(normalizeActorId(staffId))?.name || null
+      : null,
+
+    screenedAt: recruit.screened_at || null,
+  };
+};
+
+// ======================================================
+// WORKFLOW HISTORY SERIALIZER
+//
+// Existing records created before this feature may not
+// have workflow_history.
+//
+// For those records we create legacy display entries from
+// the current screening/review fields.
+//
+// This does NOT invent older overwritten history.
+// ======================================================
+
+const serializeWorkflowHistory = (
+  recruit,
+  staffMap = new Map(),
+  adminMap = new Map(),
+) => {
+  const persistedHistory = Array.isArray(recruit.workflow_history)
+    ? recruit.workflow_history
+    : [];
+
+  const history = persistedHistory.map((item) => ({
+    action: item.action,
+
+    fromStatus: item.from_status || null,
+
+    toStatus: item.to_status || null,
+
+    actorRole: item.actor_role || null,
+
+    actorId: item.actor_id || null,
+
+    actorName: resolveActorName({
+      role: item.actor_role,
+
+      actorId: item.actor_id,
+
+      staffMap,
+
+      adminMap,
+
+      snapshot: item.actor_name_snapshot,
+    }),
+
+    note: item.note || null,
+
+    createdAt: item.created_at || null,
+  }));
+
+  const hasScreeningHistory = history.some((item) =>
+    ["SCREENED", "NEEDS_ATTENTION"].includes(item.action),
+  );
+
+  if (
+    !hasScreeningHistory &&
+    recruit.screened_at &&
+    recruit.staff_screening_status !== "NOT_SCREENED"
+  ) {
+    history.push({
+      action: recruit.staff_screening_status,
+
+      fromStatus: "pending_review",
+
+      toStatus: "pending_review",
+
+      actorRole: "staff",
+
+      actorId: recruit.screened_by_staff_id || null,
+
+      actorName: recruit.screened_by_staff_id
+        ? staffMap.get(normalizeActorId(recruit.screened_by_staff_id))?.name ||
+          null
+        : null,
+
+      note: recruit.staff_screening_note || null,
+
+      createdAt: recruit.screened_at,
+    });
+  }
+
+  const hasDecisionHistory = history.some((item) =>
+    ["APPROVED", "REJECTED"].includes(item.action),
+  );
+
+  if (
+    !hasDecisionHistory &&
+    recruit.reviewed_at &&
+    ["approved", "rejected"].includes(recruit.status)
+  ) {
+    history.push({
+      action: recruit.status === "approved" ? "APPROVED" : "REJECTED",
+
+      fromStatus: "pending_review",
+
+      toStatus: recruit.status,
+
+      actorRole: recruit.reviewed_by_role || null,
+
+      actorId: recruit.reviewed_by_id || null,
+
+      actorName: resolveActorName({
+        role: recruit.reviewed_by_role,
+
+        actorId: recruit.reviewed_by_id,
+
+        staffMap,
+
+        adminMap,
+      }),
+
+      note: recruit.rejection_reason || null,
+
+      createdAt: recruit.reviewed_at,
+    });
+  }
+
+  return history.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+
+    return bTime - aTime;
+  });
+};
 
 // ======================================================
 // REQUEST SERIALIZER
 // ======================================================
 
-const serializeRequest = (recruit, provider) => ({
-  recruitId: recruit.recruitId,
+const serializeRequest = (
+  recruit,
+  provider,
+  staffMap = new Map(),
+  adminMap = new Map(),
+) => {
+  const reviewedByName = resolveActorName({
+    role: recruit.reviewed_by_role,
 
-  companyId: recruit.company_id,
+    actorId: recruit.reviewed_by_id,
 
-  companyName: provider?.companyName || "-",
+    staffMap,
 
-  providerName: provider?.name || "-",
+    adminMap,
+  });
 
-  providerEmail: provider?.email || null,
+  return {
+    recruitId: recruit.recruitId,
 
-  // ==================================================
-  // JOB
-  // ==================================================
+    companyId: recruit.company_id,
 
-  jobTitle: recruit.job_title,
+    companyName: provider?.companyName || "-",
 
-  jobCategory: recruit.job_category,
+    providerName: provider?.name || "-",
 
-  employmentType: recruit.employment_type,
+    providerEmail: provider?.email || null,
 
-  numberOfPositions: recruit.number_of_positions,
+    // ==================================================
+    // JOB
+    // ==================================================
 
-  workLocation: recruit.work_location,
+    jobTitle: recruit.job_title,
 
-  jobDescription: recruit.job_description,
+    jobCategory: recruit.job_category,
 
-  requirements: recruit.requirements,
+    employmentType: recruit.employment_type,
 
-  japaneseLevelRequired: recruit.japanese_level_required,
+    numberOfPositions: recruit.number_of_positions,
 
-  visaTypeRequired: recruit.visa_type_required,
+    workLocation: recruit.work_location,
 
-  // ==================================================
-  // CONDITIONS
-  // ==================================================
+    jobDescription: recruit.job_description,
 
-  salaryType: recruit.salary_type,
+    requirements: recruit.requirements,
 
-  salaryAmount: recruit.salary_amount,
+    japaneseLevelRequired: recruit.japanese_level_required,
 
-  workingHours: recruit.working_hours,
+    visaTypeRequired: recruit.visa_type_required,
 
-  daysOff: recruit.days_off,
+    // ==================================================
+    // CONDITIONS
+    // ==================================================
 
-  startDate: recruit.start_date,
+    salaryType: recruit.salary_type,
 
-  // ==================================================
-  // WORKFLOW
-  // ==================================================
+    salaryAmount: recruit.salary_amount,
 
-  status: recruit.status,
+    workingHours: recruit.working_hours,
 
-  rejectionReason: recruit.rejection_reason,
+    daysOff: recruit.days_off,
 
-  submittedAt: recruit.submitted_at,
+    startDate: recruit.start_date,
 
-  reviewedAt: recruit.reviewed_at,
+    // ==================================================
+    // WORKFLOW
+    // ==================================================
 
-  reviewedByRole: recruit.reviewed_by_role || null,
+    status: recruit.status,
 
-  reviewedById: recruit.reviewed_by_id || null,
+    rejectionReason: recruit.rejection_reason,
 
-  // ==================================================
-  // STAFF SCREENING
-  // ==================================================
+    submittedAt: recruit.submitted_at,
 
-  staffScreening: serializeStaffScreening(recruit),
+    reviewedAt: recruit.reviewed_at,
 
-  createdAt: recruit.createdAt,
+    reviewedByRole: recruit.reviewed_by_role || null,
 
-  updatedAt: recruit.updatedAt,
-});
+    reviewedById: recruit.reviewed_by_id || null,
+
+    reviewedByName,
+
+    review: {
+      decision: ["approved", "rejected"].includes(recruit.status)
+        ? recruit.status
+        : null,
+
+      reviewedAt: recruit.reviewed_at || null,
+
+      reviewedByRole: recruit.reviewed_by_role || null,
+
+      reviewedById: recruit.reviewed_by_id || null,
+
+      reviewedByName,
+
+      rejectionReason: recruit.rejection_reason || null,
+    },
+
+    // ==================================================
+    // STAFF SCREENING
+    // ==================================================
+
+    staffScreening: serializeStaffScreening(recruit, staffMap),
+
+    // ==================================================
+    // COMPLETE INTERNAL AUDIT HISTORY
+    // ==================================================
+
+    workflowHistory: serializeWorkflowHistory(recruit, staffMap, adminMap),
+
+    createdAt: recruit.createdAt,
+
+    updatedAt: recruit.updatedAt,
+  };
+};
 
 // ======================================================
 // PROVIDER MAP
@@ -141,18 +456,29 @@ exports.getPlacementRequests = async (req, res) => {
         $ne: "draft",
       },
     })
+      .select("+workflow_history")
       .sort({
         createdAt: -1,
       })
       .lean();
 
-    const providerMap = await getProviderMap(recruits);
+    const [providerMap, actorMaps] = await Promise.all([
+      getProviderMap(recruits),
+
+      getActorMaps(recruits),
+    ]);
+
+    const { staffMap, adminMap } = actorMaps;
 
     const data = recruits.map((recruit) =>
       serializeRequest(
         recruit,
 
         providerMap.get(recruit.company_id),
+
+        staffMap,
+
+        adminMap,
       ),
     );
 
@@ -170,9 +496,6 @@ exports.getPlacementRequests = async (req, res) => {
         approved: data.filter((item) => item.status === "approved").length,
 
         rejected: data.filter((item) => item.status === "rejected").length,
-
-        // Screening summary is independent from
-        // workflow status.
 
         notScreened: data.filter(
           (item) => item.staffScreening.status === "NOT_SCREENED",
@@ -208,7 +531,9 @@ exports.getPlacementRequestById = async (req, res) => {
   try {
     const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
-    }).lean();
+    })
+      .select("+workflow_history")
+      .lean();
 
     if (!recruit) {
       return res.status(404).json({
@@ -218,12 +543,24 @@ exports.getPlacementRequestById = async (req, res) => {
       });
     }
 
-    const provider = await getProvider(recruit.company_id);
+    const [provider, actorMaps] = await Promise.all([
+      getProvider(recruit.company_id),
+
+      getActorMaps([recruit]),
+    ]);
 
     return res.status(200).json({
       success: true,
 
-      data: serializeRequest(recruit, provider),
+      data: serializeRequest(
+        recruit,
+
+        provider,
+
+        actorMaps.staffMap,
+
+        actorMaps.adminMap,
+      ),
     });
   } catch (error) {
     console.error("GET ADMIN PLACEMENT REQUEST ERROR:", error);
@@ -246,7 +583,7 @@ exports.approvePlacementRequest = async (req, res) => {
   try {
     const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
-    });
+    }).select("+workflow_history");
 
     if (!recruit) {
       return res.status(404).json({
@@ -264,9 +601,41 @@ exports.approvePlacementRequest = async (req, res) => {
       });
     }
 
+    const previousStatus = recruit.status;
+
+    const now = new Date();
+
+    const actor = await getCurrentAdminActor(req.admin.adminId);
+
+    // ==================================================
+    // SAVE HISTORY
+    // ==================================================
+
+    recruit.workflow_history.push({
+      action: "APPROVED",
+
+      from_status: previousStatus,
+
+      to_status: "approved",
+
+      actor_role: "admin",
+
+      actor_id: actor.id,
+
+      actor_name_snapshot: actor.name,
+
+      note: null,
+
+      created_at: now,
+    });
+
+    // ==================================================
+    // CURRENT STATE
+    // ==================================================
+
     recruit.status = "approved";
 
-    recruit.reviewed_at = new Date();
+    recruit.reviewed_at = now;
 
     recruit.reviewed_by_role = "admin";
 
@@ -276,14 +645,28 @@ exports.approvePlacementRequest = async (req, res) => {
 
     await recruit.save();
 
-    const provider = await getProvider(recruit.company_id);
+    const plainRecruit = recruit.toObject();
+
+    const [provider, actorMaps] = await Promise.all([
+      getProvider(recruit.company_id),
+
+      getActorMaps([plainRecruit]),
+    ]);
 
     return res.status(200).json({
       success: true,
 
       message: "Placement request approved.",
 
-      data: serializeRequest(recruit, provider),
+      data: serializeRequest(
+        plainRecruit,
+
+        provider,
+
+        actorMaps.staffMap,
+
+        actorMaps.adminMap,
+      ),
     });
   } catch (error) {
     console.error("APPROVE PLACEMENT REQUEST ERROR:", error);
@@ -325,7 +708,7 @@ exports.rejectPlacementRequest = async (req, res) => {
 
     const recruit = await Recruit.findOne({
       recruitId: req.params.recruitId,
-    });
+    }).select("+workflow_history");
 
     if (!recruit) {
       return res.status(404).json({
@@ -343,9 +726,41 @@ exports.rejectPlacementRequest = async (req, res) => {
       });
     }
 
+    const previousStatus = recruit.status;
+
+    const now = new Date();
+
+    const actor = await getCurrentAdminActor(req.admin.adminId);
+
+    // ==================================================
+    // SAVE HISTORY
+    // ==================================================
+
+    recruit.workflow_history.push({
+      action: "REJECTED",
+
+      from_status: previousStatus,
+
+      to_status: "rejected",
+
+      actor_role: "admin",
+
+      actor_id: actor.id,
+
+      actor_name_snapshot: actor.name,
+
+      note: reason,
+
+      created_at: now,
+    });
+
+    // ==================================================
+    // CURRENT STATE
+    // ==================================================
+
     recruit.status = "rejected";
 
-    recruit.reviewed_at = new Date();
+    recruit.reviewed_at = now;
 
     recruit.reviewed_by_role = "admin";
 
@@ -355,14 +770,28 @@ exports.rejectPlacementRequest = async (req, res) => {
 
     await recruit.save();
 
-    const provider = await getProvider(recruit.company_id);
+    const plainRecruit = recruit.toObject();
+
+    const [provider, actorMaps] = await Promise.all([
+      getProvider(recruit.company_id),
+
+      getActorMaps([plainRecruit]),
+    ]);
 
     return res.status(200).json({
       success: true,
 
       message: "Placement request rejected.",
 
-      data: serializeRequest(recruit, provider),
+      data: serializeRequest(
+        plainRecruit,
+
+        provider,
+
+        actorMaps.staffMap,
+
+        actorMaps.adminMap,
+      ),
     });
   } catch (error) {
     console.error("REJECT PLACEMENT REQUEST ERROR:", error);

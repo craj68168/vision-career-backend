@@ -6,6 +6,10 @@ const Vacancy = require("../../models/providers/vacancySchema");
 
 const Provider = require("../../models/providers/registerSchema");
 
+const Staff = require("../../models/admin/staffSchema");
+
+const Admin = require("../../models/admin/adminSchema");
+
 const {
   sendApplicationResume,
 } = require("../../utils/applicationResumeStorage");
@@ -26,33 +30,178 @@ const APPLICATION_STATUSES = [
 ];
 
 // ======================================================
+// NORMALIZE ACTOR ID
+// ======================================================
+
+const normalizeActorId = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  return String(value).trim().toUpperCase();
+};
+
+// ======================================================
+// GET ACTOR TYPE FROM ID
+//
+// STF-* => Staff
+// ADM-* => Admin
+// ======================================================
+
+const getActorTypeFromId = (actorId) => {
+  const normalized = normalizeActorId(actorId);
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("STF-")) {
+    return "staff";
+  }
+
+  if (normalized.startsWith("ADM-")) {
+    return "admin";
+  }
+
+  return null;
+};
+
+// ======================================================
+// GET STAFF NAME
+// ======================================================
+
+const getStaffName = (staffId, staffMap) => {
+  const normalized = normalizeActorId(staffId);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return staffMap.get(normalized)?.name || null;
+};
+
+// ======================================================
+// GET ADMIN NAME
+//
+// Current Admin model uses username rather than a
+// separate display-name field.
+//
+// Therefore:
+//
+// reviewedByName = admin.username
+//
+// Example:
+//
+// Admin ID: ADM-83401E5E
+// Reviewed By: admin
+// ======================================================
+
+const getAdminName = (adminId, adminMap) => {
+  const normalized = normalizeActorId(adminId);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return adminMap.get(normalized)?.username || null;
+};
+
+// ======================================================
+// GET REVIEW ACTOR NAME
+// ======================================================
+
+const getReviewActorName = (actorId, staffMap, adminMap) => {
+  const actorType = getActorTypeFromId(actorId);
+
+  if (actorType === "staff") {
+    return getStaffName(actorId, staffMap);
+  }
+
+  if (actorType === "admin") {
+    return getAdminName(actorId, adminMap);
+  }
+
+  return null;
+};
+
+// ======================================================
 // STAFF SCREENING SERIALIZER
 // ======================================================
 
-const serializeStaffScreening = (application) => ({
-  status: application.staff_screening_status || "NOT_SCREENED",
+const serializeStaffScreening = (application, staffMap = new Map()) => {
+  const staffId = application.screened_by_staff_id || null;
 
-  note: application.staff_screening_note || null,
+  return {
+    status: application.staff_screening_status || "NOT_SCREENED",
 
-  screenedByStaffId: application.screened_by_staff_id || null,
+    note: application.staff_screening_note || null,
 
-  screenedAt: application.screened_at || null,
-});
+    screenedByStaffId: staffId,
+
+    screenedByStaffName: getStaffName(staffId, staffMap),
+
+    screenedAt: application.screened_at || null,
+  };
+};
 
 // ======================================================
-// ADMIN REVIEW SERIALIZER
+// APPLICATION REVIEW SERIALIZER
+//
+// Historical field:
+//
+// admin_reviewed_by
+//
+// may actually contain:
+//
+// ADM-* => Admin
+// STF-* => authorized Staff
+//
+// We keep `reviewedBy` for compatibility while adding:
+//
+// reviewedByType
+// reviewedById
+// reviewedByName
 // ======================================================
 
-const serializeAdminReview = (application) => ({
-  reviewedAt: application.admin_reviewed_at || null,
+const serializeAdminReview = (
+  application,
+  staffMap = new Map(),
+  adminMap = new Map(),
+) => {
+  const reviewedBy = application.admin_reviewed_by || null;
 
-  reviewedBy: application.admin_reviewed_by || null,
+  const reviewedByType = getActorTypeFromId(reviewedBy);
 
-  rejectionReason: application.admin_rejection_reason || null,
-});
+  const reviewedByName = getReviewActorName(reviewedBy, staffMap, adminMap);
+
+  return {
+    // Legacy compatibility
+    reviewedBy,
+
+    // New audit fields
+    reviewedByType,
+
+    reviewedById: reviewedBy,
+
+    reviewedByName: reviewedByName || reviewedBy,
+
+    reviewedAt: application.admin_reviewed_at || null,
+
+    rejectionReason: application.admin_rejection_reason || null,
+  };
+};
 
 // ======================================================
 // FIND RELATED DATA
+//
+// In addition to Seeker/Vacancy/Provider, this also
+// resolves:
+//
+// - Staff screening actor names
+// - Staff approval/rejection actor names
+// - Admin approval/rejection usernames
+//
+// This avoids N+1 actor queries for the application list.
 // ======================================================
 
 const getRelatedData = async (applications) => {
@@ -76,7 +225,54 @@ const getRelatedData = async (applications) => {
     ),
   ];
 
-  const [seekers, vacancies, providers] = await Promise.all([
+  // ====================================================
+  // STAFF IDS
+  //
+  // Includes:
+  //
+  // - Staff who screened
+  // - Staff who approved/rejected
+  // ====================================================
+
+  const staffIds = [
+    ...new Set(
+      applications
+        .flatMap((application) => {
+          const ids = [];
+
+          if (application.screened_by_staff_id) {
+            ids.push(normalizeActorId(application.screened_by_staff_id));
+          }
+
+          if (getActorTypeFromId(application.admin_reviewed_by) === "staff") {
+            ids.push(normalizeActorId(application.admin_reviewed_by));
+          }
+
+          return ids;
+        })
+        .filter(Boolean),
+    ),
+  ];
+
+  // ====================================================
+  // ADMIN IDS
+  //
+  // Admin reviewers only.
+  // ====================================================
+
+  const adminIds = [
+    ...new Set(
+      applications
+        .map((application) =>
+          getActorTypeFromId(application.admin_reviewed_by) === "admin"
+            ? normalizeActorId(application.admin_reviewed_by)
+            : null,
+        )
+        .filter(Boolean),
+    ),
+  ];
+
+  const [seekers, vacancies, providers, staffs, admins] = await Promise.all([
     seekerIds.length
       ? Seeker.find({
           seeker_id: {
@@ -100,18 +296,62 @@ const getRelatedData = async (applications) => {
           },
         }).lean()
       : [],
+
+    staffIds.length
+      ? Staff.find({
+          staffId: {
+            $in: staffIds,
+          },
+        })
+          .select("staffId name")
+          .lean()
+      : [],
+
+    adminIds.length
+      ? Admin.find({
+          adminId: {
+            $in: adminIds,
+          },
+        })
+          .select("adminId username")
+          .lean()
+      : [],
   ]);
 
+  // ====================================================
+  // MAPS
+  // ====================================================
+
+  const seekerMap = new Map(
+    seekers.map((seeker) => [seeker.seeker_id, seeker]),
+  );
+
+  const vacancyMap = new Map(
+    vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
+  );
+
+  const providerMap = new Map(
+    providers.map((provider) => [provider.registerId, provider]),
+  );
+
+  const staffMap = new Map(
+    staffs.map((staff) => [normalizeActorId(staff.staffId), staff]),
+  );
+
+  const adminMap = new Map(
+    admins.map((admin) => [normalizeActorId(admin.adminId), admin]),
+  );
+
   return {
-    seekerMap: new Map(seekers.map((seeker) => [seeker.seeker_id, seeker])),
+    seekerMap,
 
-    vacancyMap: new Map(
-      vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
-    ),
+    vacancyMap,
 
-    providerMap: new Map(
-      providers.map((provider) => [provider.registerId, provider]),
-    ),
+    providerMap,
+
+    staffMap,
+
+    adminMap,
   };
 };
 
@@ -119,7 +359,14 @@ const getRelatedData = async (applications) => {
 // LIST SERIALIZER
 // ======================================================
 
-const toApplicationListItem = (application, seeker, vacancy, provider) => {
+const toApplicationListItem = (
+  application,
+  seeker,
+  vacancy,
+  provider,
+  staffMap,
+  adminMap,
+) => {
   return {
     applicationId: application.application_id,
 
@@ -134,6 +381,10 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
     appliedAt: application.applied_at,
 
     coverLetter: application.cover_letter || null,
+
+    // ==================================================
+    // CANDIDATE
+    // ==================================================
 
     candidate: {
       name: seeker?.name || application.profile_snapshot?.name || "Unknown",
@@ -158,6 +409,10 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
         null,
     },
 
+    // ==================================================
+    // VACANCY
+    // ==================================================
+
     vacancy: {
       vacancyId: vacancy?.vacancyId || application.vacancy_id,
 
@@ -175,6 +430,10 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
       salaryMax: vacancy?.salaryMax ?? null,
     },
 
+    // ==================================================
+    // PROVIDER
+    // ==================================================
+
     provider: {
       registerId: provider?.registerId || application.provider_id,
 
@@ -185,9 +444,17 @@ const toApplicationListItem = (application, seeker, vacancy, provider) => {
       email: provider?.email || null,
     },
 
-    staffScreening: serializeStaffScreening(application),
+    // ==================================================
+    // STAFF SCREENING
+    // ==================================================
 
-    adminReview: serializeAdminReview(application),
+    staffScreening: serializeStaffScreening(application, staffMap),
+
+    // ==================================================
+    // APPLICATION REVIEW
+    // ==================================================
+
+    adminReview: serializeAdminReview(application, staffMap, adminMap),
   };
 };
 
@@ -235,6 +502,9 @@ const getApplicationSummary = async () => {
 
 // ======================================================
 // GET ALL ADMIN APPLICATIONS
+//
+// GET
+// /api/admin/applications
 // ======================================================
 
 exports.getAdminApplications = async (req, res) => {
@@ -258,7 +528,7 @@ exports.getAdminApplications = async (req, res) => {
       })
       .lean();
 
-    const { seekerMap, vacancyMap, providerMap } =
+    const { seekerMap, vacancyMap, providerMap, staffMap, adminMap } =
       await getRelatedData(applications);
 
     let data = applications.map((application) =>
@@ -270,8 +540,16 @@ exports.getAdminApplications = async (req, res) => {
         vacancyMap.get(application.vacancy_id),
 
         providerMap.get(application.provider_id),
+
+        staffMap,
+
+        adminMap,
       ),
     );
+
+    // ==================================================
+    // SEARCH
+    // ==================================================
 
     if (search) {
       data = data.filter((application) => {
@@ -298,7 +576,15 @@ exports.getAdminApplications = async (req, res) => {
 
           application.staffScreening.screenedByStaffId,
 
+          application.staffScreening.screenedByStaffName,
+
           application.staffScreening.note,
+
+          application.adminReview.reviewedById,
+
+          application.adminReview.reviewedByName,
+
+          application.adminReview.reviewedByType,
         ]
           .filter(Boolean)
           .join(" ")
@@ -332,6 +618,9 @@ exports.getAdminApplications = async (req, res) => {
 
 // ======================================================
 // GET APPLICATION DETAILS
+//
+// GET
+// /api/admin/applications/:applicationId
 // ======================================================
 
 exports.getAdminApplicationById = async (req, res) => {
@@ -350,19 +639,20 @@ exports.getAdminApplicationById = async (req, res) => {
       });
     }
 
-    const [seeker, vacancy, provider] = await Promise.all([
-      Seeker.findOne({
-        seeker_id: application.seeker_id,
-      }).lean(),
+    // ==================================================
+    // LOAD ALL RELATED DATA
+    //
+    // This now includes Staff/Admin actor names.
+    // ==================================================
 
-      Vacancy.findOne({
-        vacancyId: application.vacancy_id,
-      }).lean(),
+    const { seekerMap, vacancyMap, providerMap, staffMap, adminMap } =
+      await getRelatedData([application]);
 
-      Provider.findOne({
-        registerId: application.provider_id,
-      }).lean(),
-    ]);
+    const seeker = seekerMap.get(application.seeker_id);
+
+    const vacancy = vacancyMap.get(application.vacancy_id);
+
+    const provider = providerMap.get(application.provider_id);
 
     return res.status(200).json({
       success: true,
@@ -381,6 +671,10 @@ exports.getAdminApplicationById = async (req, res) => {
         coverLetter: application.cover_letter || null,
 
         appliedAt: application.applied_at,
+
+        // ============================================
+        // CANDIDATE
+        // ============================================
 
         candidate: {
           name: seeker?.name || application.profile_snapshot?.name || "Unknown",
@@ -438,6 +732,10 @@ exports.getAdminApplicationById = async (req, res) => {
             [],
         },
 
+        // ============================================
+        // VACANCY
+        // ============================================
+
         vacancy: {
           vacancyId: vacancy?.vacancyId || application.vacancy_id,
 
@@ -473,6 +771,10 @@ exports.getAdminApplicationById = async (req, res) => {
           salaryNote: vacancy?.salaryNote || null,
         },
 
+        // ============================================
+        // PROVIDER
+        // ============================================
+
         provider: {
           registerId: provider?.registerId || application.provider_id,
 
@@ -483,16 +785,21 @@ exports.getAdminApplicationById = async (req, res) => {
           email: provider?.email || null,
         },
 
-        staffScreening: serializeStaffScreening(application),
+        // ============================================
+        // STAFF SCREENING
+        // ============================================
 
-        adminReview: serializeAdminReview(application),
+        staffScreening: serializeStaffScreening(application, staffMap),
 
-        // ==================================================
-        // IMPORTANT
-        //
-        // Resume availability comes ONLY from the frozen
-        // application snapshot.
-        // ==================================================
+        // ============================================
+        // REVIEW / APPROVAL
+        // ============================================
+
+        adminReview: serializeAdminReview(application, staffMap, adminMap),
+
+        // ============================================
+        // FROZEN APPLICATION RESUME
+        // ============================================
 
         resumeAvailable: Boolean(
           application.profile_snapshot?.generated_resume_file,
@@ -512,6 +819,9 @@ exports.getAdminApplicationById = async (req, res) => {
 
 // ======================================================
 // APPROVE APPLICATION
+//
+// PATCH
+// /api/admin/applications/:applicationId/approve
 // ======================================================
 
 exports.approveAdminApplication = async (req, res) => {
@@ -534,9 +844,13 @@ exports.approveAdminApplication = async (req, res) => {
       return res.status(409).json({
         success: false,
 
-        message: "Only applications pending Admin approval can be approved.",
+        message: "Only applications pending approval can be approved.",
       });
     }
+
+    // ==================================================
+    // ADMIN DECISION
+    // ==================================================
 
     application.status = "SENT_TO_PROVIDER";
 
@@ -547,6 +861,16 @@ exports.approveAdminApplication = async (req, res) => {
     application.admin_rejection_reason = null;
 
     await application.save();
+
+    // ==================================================
+    // RESOLVE ADMIN USERNAME
+    // ==================================================
+
+    const admin = await Admin.findOne({
+      adminId: req.admin.adminId,
+    })
+      .select("adminId username")
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -560,7 +884,14 @@ exports.approveAdminApplication = async (req, res) => {
 
         reviewedAt: application.admin_reviewed_at,
 
+        // Legacy
         reviewedBy: application.admin_reviewed_by,
+
+        reviewedByType: "admin",
+
+        reviewedById: application.admin_reviewed_by,
+
+        reviewedByName: admin?.username || application.admin_reviewed_by,
 
         rejectionReason: null,
       },
@@ -578,6 +909,9 @@ exports.approveAdminApplication = async (req, res) => {
 
 // ======================================================
 // REJECT APPLICATION
+//
+// PATCH
+// /api/admin/applications/:applicationId/reject
 // ======================================================
 
 exports.rejectAdminApplication = async (req, res) => {
@@ -619,9 +953,13 @@ exports.rejectAdminApplication = async (req, res) => {
       return res.status(409).json({
         success: false,
 
-        message: "Only applications pending Admin approval can be rejected.",
+        message: "Only applications pending approval can be rejected.",
       });
     }
+
+    // ==================================================
+    // ADMIN REJECTION
+    // ==================================================
 
     application.status = "ADMIN_REJECTED";
 
@@ -632,6 +970,16 @@ exports.rejectAdminApplication = async (req, res) => {
     application.admin_rejection_reason = reason;
 
     await application.save();
+
+    // ==================================================
+    // RESOLVE ADMIN USERNAME
+    // ==================================================
+
+    const admin = await Admin.findOne({
+      adminId: req.admin.adminId,
+    })
+      .select("adminId username")
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -645,7 +993,14 @@ exports.rejectAdminApplication = async (req, res) => {
 
         reviewedAt: application.admin_reviewed_at,
 
+        // Legacy
         reviewedBy: application.admin_reviewed_by,
+
+        reviewedByType: "admin",
+
+        reviewedById: application.admin_reviewed_by,
+
+        reviewedByName: admin?.username || application.admin_reviewed_by,
 
         rejectionReason: application.admin_rejection_reason,
       },
@@ -664,7 +1019,8 @@ exports.rejectAdminApplication = async (req, res) => {
 // ======================================================
 // GET APPLICATION FROZEN RESUME
 //
-// GET /api/admin/applications/:applicationId/resume
+// GET
+// /api/admin/applications/:applicationId/resume
 // ======================================================
 
 exports.getAdminApplicationResume = async (req, res) => {

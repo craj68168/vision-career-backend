@@ -1,7 +1,55 @@
 const Vacancy = require("../../models/providers/vacancySchema");
 
+const Provider = require("../../models/providers/registerSchema");
+
 // ======================================================
-// STAFF SCREENING SERIALIZER
+// STAFF ACTOR
+// ======================================================
+
+const getStaffActor = (req) => ({
+  type: "staff",
+
+  id:
+    req.staff?.staffId || req.staff?.id || req.staff?._id?.toString?.() || null,
+
+  name: req.staff?.name || req.staff?.fullName || req.staff?.email || "Staff",
+});
+
+// ======================================================
+// WORKFLOW HISTORY
+// ======================================================
+
+const addWorkflowHistory = (
+  vacancy,
+  { action, fromStatus, toStatus, actor, reason = null, note = null },
+) => {
+  if (!Array.isArray(vacancy.workflow_history)) {
+    vacancy.workflow_history = [];
+  }
+
+  vacancy.workflow_history.push({
+    action,
+
+    from_status: fromStatus || null,
+
+    to_status: toStatus || null,
+
+    actor_type: actor.type,
+
+    actor_id: actor.id,
+
+    actor_name: actor.name,
+
+    reason,
+
+    note,
+
+    created_at: new Date(),
+  });
+};
+
+// ======================================================
+// SCREENING SERIALIZER
 // ======================================================
 
 const serializeScreening = (vacancy) => ({
@@ -11,20 +59,106 @@ const serializeScreening = (vacancy) => ({
 
   screenedByStaffId: vacancy.screened_by_staff_id || null,
 
+  screenedByStaffName: vacancy.screened_by_staff_name || null,
+
   screenedAt: vacancy.screened_at || null,
 });
 
 // ======================================================
-// VACANCY SERIALIZER
-//
-// Staff receives business information required for
-// screening and delegated vacancy decisions.
-//
-// Provider private contact fields are intentionally not
-// included.
+// REVIEW SERIALIZER
 // ======================================================
 
-const serializeVacancy = (vacancy) => ({
+const serializeReview = (vacancy) => ({
+  reviewedAt: vacancy.reviewedAt || null,
+
+  reviewedByType: vacancy.reviewedByType || null,
+
+  reviewedById: vacancy.reviewedById || null,
+
+  reviewedByName: vacancy.reviewedByName || null,
+
+  rejectionReason: vacancy.rejectionReason || null,
+});
+
+// ======================================================
+// HISTORY
+// ======================================================
+
+const serializeWorkflowHistory = (vacancy) => {
+  const history = Array.isArray(vacancy.workflow_history)
+    ? vacancy.workflow_history
+    : [];
+
+  return history
+    .map((entry) => ({
+      id: entry._id ? String(entry._id) : null,
+
+      action: entry.action,
+
+      fromStatus: entry.from_status || null,
+
+      toStatus: entry.to_status || null,
+
+      actorType: entry.actor_type,
+
+      actorId: entry.actor_id || null,
+
+      actorName: entry.actor_name || null,
+
+      reason: entry.reason || null,
+
+      note: entry.note || null,
+
+      createdAt: entry.created_at || null,
+    }))
+    .sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+
+      return bTime - aTime;
+    });
+};
+
+// ======================================================
+// PROVIDER DETAILS
+//
+// Authorized Staff can see internal provider information.
+// ======================================================
+
+const serializeProvider = (provider, vacancy) => ({
+  registerId: provider?.registerId || vacancy.registerId,
+
+  name: provider?.name || null,
+
+  companyName: provider?.companyName || vacancy.companyName,
+
+  email: provider?.email || null,
+
+  phone: provider?.phone || null,
+
+  address: provider?.address || null,
+
+  industry: provider?.industry || null,
+
+  contactPerson: provider?.contact_person || null,
+
+  contactPersonPhone: provider?.contact_person_phone || null,
+
+  contactPersonEmail: provider?.contact_person_email || null,
+
+  website: provider?.website || null,
+
+  hiringNeeds: provider?.hiring_needs || null,
+
+  notes: provider?.notes || null,
+});
+
+// ======================================================
+// VACANCY SERIALIZER
+// ======================================================
+
+const serializeVacancy = (vacancy, provider = null) => ({
   vacancyId: vacancy.vacancyId,
 
   providerId: vacancy.registerId,
@@ -54,6 +188,10 @@ const serializeVacancy = (vacancy) => ({
   requiredExperience: vacancy.requiredExperience || null,
 
   japaneseLevel: vacancy.japaneseLevel || null,
+
+  // ====================================================
+  // ORIGINAL INTERNAL LOCATION
+  // ====================================================
 
   workLocation: vacancy.workLocation,
 
@@ -87,15 +225,47 @@ const serializeVacancy = (vacancy) => ({
 
   selectionProcess: vacancy.selectionProcess || null,
 
+  // ====================================================
+  // PRIVATE INTERNAL CONTACT
+  // ====================================================
+
+  contactPerson: vacancy.contactPerson || null,
+
+  contactPersonKana: vacancy.contactPersonKana || null,
+
+  contactEmail: vacancy.contactEmail || null,
+
+  // ====================================================
+  // WORKFLOW
+  // ====================================================
+
   status: vacancy.status,
 
   isPublished: vacancy.isPublished,
 
-  reviewedAt: vacancy.reviewedAt || null,
+  review: serializeReview(vacancy),
 
-  rejectionReason: vacancy.rejectionReason || null,
+  publication: {
+    publishedAt: vacancy.publishedAt || null,
+
+    publishedByAdminId: vacancy.publishedByAdminId || null,
+
+    publishedByAdminName: vacancy.publishedByAdminName || null,
+  },
+
+  closing: {
+    closedAt: vacancy.closedAt || null,
+
+    closedByAdminId: vacancy.closedByAdminId || null,
+
+    closedByAdminName: vacancy.closedByAdminName || null,
+  },
 
   staffScreening: serializeScreening(vacancy),
+
+  workflowHistory: serializeWorkflowHistory(vacancy),
+
+  provider: serializeProvider(provider, vacancy),
 
   createdAt: vacancy.createdAt,
 
@@ -103,9 +273,29 @@ const serializeVacancy = (vacancy) => ({
 });
 
 // ======================================================
+// PROVIDER MAP
+// ======================================================
+
+const getProviderMap = async (vacancies) => {
+  const registerIds = [
+    ...new Set(vacancies.map((vacancy) => vacancy.registerId).filter(Boolean)),
+  ];
+
+  if (!registerIds.length) {
+    return new Map();
+  }
+
+  const providers = await Provider.find({
+    registerId: {
+      $in: registerIds,
+    },
+  }).lean();
+
+  return new Map(providers.map((provider) => [provider.registerId, provider]));
+};
+
+// ======================================================
 // GET STAFF VACANCIES
-//
-// GET /api/staff/vacancies
 // ======================================================
 
 exports.getStaffVacancies = async (req, res) => {
@@ -116,7 +306,15 @@ exports.getStaffVacancies = async (req, res) => {
       })
       .lean();
 
-    const data = vacancies.map(serializeVacancy);
+    const providerMap = await getProviderMap(vacancies);
+
+    const data = vacancies.map((vacancy) =>
+      serializeVacancy(
+        vacancy,
+
+        providerMap.get(vacancy.registerId),
+      ),
+    );
 
     return res.status(200).json({
       success: true,
@@ -162,9 +360,7 @@ exports.getStaffVacancies = async (req, res) => {
 };
 
 // ======================================================
-// GET ONE STAFF VACANCY
-//
-// GET /api/staff/vacancies/:vacancyId
+// GET ONE
 // ======================================================
 
 exports.getStaffVacancyById = async (req, res) => {
@@ -181,10 +377,18 @@ exports.getStaffVacancyById = async (req, res) => {
       });
     }
 
+    const provider = await Provider.findOne({
+      registerId: vacancy.registerId,
+    }).lean();
+
     return res.status(200).json({
       success: true,
 
-      data: serializeVacancy(vacancy),
+      data: serializeVacancy(
+        vacancy,
+
+        provider,
+      ),
     });
   } catch (error) {
     console.error("GET STAFF VACANCY ERROR:", error);
@@ -200,26 +404,13 @@ exports.getStaffVacancyById = async (req, res) => {
 // ======================================================
 // SCREEN VACANCY
 //
-// PATCH /api/staff/vacancies/:vacancyId/screen
-//
-// Requires:
+// Permission:
 // vacancies:review
-//
-// IMPORTANT:
-//
-// This endpoint performs screening only.
-//
-// Approval / rejection is handled separately through
-// vacancies:approval.
 // ======================================================
 
 exports.screenVacancy = async (req, res) => {
   try {
     const { screeningStatus, note } = req.body;
-
-    // ==================================================
-    // SCREENING STATUS
-    // ==================================================
 
     if (!["SCREENED", "NEEDS_ATTENTION"].includes(screeningStatus)) {
       return res.status(400).json({
@@ -230,10 +421,6 @@ exports.screenVacancy = async (req, res) => {
     }
 
     const normalizedNote = String(note || "").trim();
-
-    // ==================================================
-    // NEEDS ATTENTION REQUIRES NOTE
-    // ==================================================
 
     if (screeningStatus === "NEEDS_ATTENTION" && !normalizedNote) {
       return res.status(400).json({
@@ -252,10 +439,6 @@ exports.screenVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // FIND VACANCY
-    // ==================================================
-
     const vacancy = await Vacancy.findOne({
       vacancyId: req.params.vacancyId,
     });
@@ -268,10 +451,6 @@ exports.screenVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // ONLY PENDING REVIEW VACANCIES CAN BE SCREENED
-    // ==================================================
-
     if (vacancy.status !== "pending_review") {
       return res.status(409).json({
         success: false,
@@ -280,19 +459,35 @@ exports.screenVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // SAVE SCREENING
-    // ==================================================
+    const actor = getStaffActor(req);
 
     vacancy.staff_screening_status = screeningStatus;
 
     vacancy.staff_screening_note = normalizedNote || null;
 
-    vacancy.screened_by_staff_id = req.staff.staffId;
+    vacancy.screened_by_staff_id = actor.id;
+
+    vacancy.screened_by_staff_name = actor.name;
 
     vacancy.screened_at = new Date();
 
+    addWorkflowHistory(vacancy, {
+      action: screeningStatus === "SCREENED" ? "SCREENED" : "NEEDS_ATTENTION",
+
+      fromStatus: vacancy.status,
+
+      toStatus: vacancy.status,
+
+      actor,
+
+      note: normalizedNote || null,
+    });
+
     await vacancy.save();
+
+    const provider = await Provider.findOne({
+      registerId: vacancy.registerId,
+    }).lean();
 
     return res.status(200).json({
       success: true,
@@ -302,7 +497,11 @@ exports.screenVacancy = async (req, res) => {
           ? "Vacancy screening completed."
           : "Vacancy marked as needing attention.",
 
-      data: serializeVacancy(vacancy),
+      data: serializeVacancy(
+        vacancy,
+
+        provider,
+      ),
     });
   } catch (error) {
     console.error("SCREEN STAFF VACANCY ERROR:", error);
@@ -316,22 +515,13 @@ exports.screenVacancy = async (req, res) => {
 };
 
 // ======================================================
-// APPROVE VACANCY
+// APPROVE
 //
-// PATCH /api/staff/vacancies/:vacancyId/approve
-//
-// Requires:
 // vacancies:approval
-//
-// Workflow:
 //
 // pending_review -> approved
 //
-// IMPORTANT:
-//
-// Approval does NOT publish the vacancy.
-//
-// Publishing remains Admin controlled.
+// Staff approval does NOT publish.
 // ======================================================
 
 exports.approveStaffVacancy = async (req, res) => {
@@ -350,10 +540,6 @@ exports.approveStaffVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // STATUS
-    // ==================================================
-
     if (vacancy.status !== "pending_review") {
       return res.status(409).json({
         success: false,
@@ -362,27 +548,62 @@ exports.approveStaffVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // APPROVE
-    // ==================================================
+    const actor = getStaffActor(req);
+
+    const fromStatus = vacancy.status;
 
     vacancy.status = "approved";
 
-    // Approval and publication remain separate steps.
     vacancy.isPublished = false;
 
     vacancy.reviewedAt = new Date();
 
+    vacancy.reviewedByType = "staff";
+
+    vacancy.reviewedById = actor.id;
+
+    vacancy.reviewedByName = actor.name;
+
     vacancy.rejectionReason = null;
 
+    vacancy.publishedAt = null;
+
+    vacancy.publishedByAdminId = null;
+
+    vacancy.publishedByAdminName = null;
+
+    vacancy.closedAt = null;
+
+    vacancy.closedByAdminId = null;
+
+    vacancy.closedByAdminName = null;
+
+    addWorkflowHistory(vacancy, {
+      action: "APPROVED",
+
+      fromStatus,
+
+      toStatus: "approved",
+
+      actor,
+    });
+
     await vacancy.save();
+
+    const provider = await Provider.findOne({
+      registerId: vacancy.registerId,
+    }).lean();
 
     return res.status(200).json({
       success: true,
 
       message: "Vacancy approved successfully.",
 
-      data: serializeVacancy(vacancy),
+      data: serializeVacancy(
+        vacancy,
+
+        provider,
+      ),
     });
   } catch (error) {
     console.error("APPROVE STAFF VACANCY ERROR:", error);
@@ -396,14 +617,9 @@ exports.approveStaffVacancy = async (req, res) => {
 };
 
 // ======================================================
-// REJECT VACANCY
+// REJECT
 //
-// PATCH /api/staff/vacancies/:vacancyId/reject
-//
-// Requires:
 // vacancies:approval
-//
-// Workflow:
 //
 // pending_review -> rejected
 // ======================================================
@@ -414,10 +630,6 @@ exports.rejectStaffVacancy = async (req, res) => {
 
     const reason =
       typeof req.body.reason === "string" ? req.body.reason.trim() : "";
-
-    // ==================================================
-    // REJECTION REASON
-    // ==================================================
 
     if (!reason) {
       return res.status(400).json({
@@ -435,10 +647,6 @@ exports.rejectStaffVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // FIND VACANCY
-    // ==================================================
-
     const vacancy = await Vacancy.findOne({
       vacancyId,
     });
@@ -451,10 +659,6 @@ exports.rejectStaffVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // STATUS
-    // ==================================================
-
     if (vacancy.status !== "pending_review") {
       return res.status(409).json({
         success: false,
@@ -463,9 +667,9 @@ exports.rejectStaffVacancy = async (req, res) => {
       });
     }
 
-    // ==================================================
-    // REJECT
-    // ==================================================
+    const actor = getStaffActor(req);
+
+    const fromStatus = vacancy.status;
 
     vacancy.status = "rejected";
 
@@ -473,16 +677,54 @@ exports.rejectStaffVacancy = async (req, res) => {
 
     vacancy.reviewedAt = new Date();
 
+    vacancy.reviewedByType = "staff";
+
+    vacancy.reviewedById = actor.id;
+
+    vacancy.reviewedByName = actor.name;
+
     vacancy.rejectionReason = reason;
 
+    vacancy.publishedAt = null;
+
+    vacancy.publishedByAdminId = null;
+
+    vacancy.publishedByAdminName = null;
+
+    vacancy.closedAt = null;
+
+    vacancy.closedByAdminId = null;
+
+    vacancy.closedByAdminName = null;
+
+    addWorkflowHistory(vacancy, {
+      action: "REJECTED",
+
+      fromStatus,
+
+      toStatus: "rejected",
+
+      actor,
+
+      reason,
+    });
+
     await vacancy.save();
+
+    const provider = await Provider.findOne({
+      registerId: vacancy.registerId,
+    }).lean();
 
     return res.status(200).json({
       success: true,
 
       message: "Vacancy rejected.",
 
-      data: serializeVacancy(vacancy),
+      data: serializeVacancy(
+        vacancy,
+
+        provider,
+      ),
     });
   } catch (error) {
     console.error("REJECT STAFF VACANCY ERROR:", error);

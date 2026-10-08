@@ -2,9 +2,18 @@ const Vacancy = require("../../models/providers/vacancySchema");
 
 const Application = require("../../models/applications/applicationSchema");
 
+const {
+  SEEKER_EMPLOYER_LABEL,
+  toSeekerVisibleWorkLocation,
+} = require("../../utils/seekerPrivacy");
+
 const { seekerMessage } = require("../../utils/seekerMessages");
 
-const t = (req, en, ja) => seekerMessage(req, { en, ja });
+const t = (req, en, ja) =>
+  seekerMessage(req, {
+    en,
+    ja,
+  });
 
 // ======================================================
 // GET START OF TODAY
@@ -39,33 +48,52 @@ const getTodayStartUTC = () => {
 //
 // IMPORTANT:
 //
-// Never expose:
+// Job Seekers must NEVER receive enough company
+// information to directly identify or contact the
+// Provider.
 //
+// NEVER expose:
+//
+// - real companyName
+// - companyNameKana
 // - registerId
+// - providerId
 // - contactPerson
 // - contactPersonKana
 // - contactEmail
+// - company phone
+// - exact company address
 // - workLocationDetail
 // - reviewedAt
+// - reviewedBy...
 // - rejectionReason
+// - staff screening information
+// - publication audit information
+// - workflow history
+//
+// Job Seekers receive:
+//
+// - Vision Career Partner Company
+// - broad work location only
+// - job-related information
 //
 // ======================================================
 
-const toPublicVacancy = (vacancy) => {
+const toSeekerSafeVacancy = (vacancy) => {
   return {
     // ==================================================
-    // ID
+    // PUBLIC VACANCY ID
     // ==================================================
 
     vacancyId: vacancy.vacancyId,
 
     // ==================================================
     // COMPANY
+    //
+    // NEVER return the real Provider/company name.
     // ==================================================
 
-    companyName: vacancy.companyName,
-
-    companyNameKana: vacancy.companyNameKana,
+    companyName: SEEKER_EMPLOYER_LABEL,
 
     // ==================================================
     // POSITION
@@ -103,9 +131,23 @@ const toPublicVacancy = (vacancy) => {
 
     // ==================================================
     // LOCATION
+    //
+    // IMPORTANT:
+    //
+    // Only broad location is returned.
+    //
+    // Example:
+    //
+    // Original:
+    // 東京都新宿区西新宿2-8-1 ABCビル
+    //
+    // Seeker:
+    // 東京都
+    //
+    // Exact workLocationDetail is never returned.
     // ==================================================
 
-    workLocation: vacancy.workLocation,
+    workLocation: toSeekerVisibleWorkLocation(vacancy.workLocation),
 
     remoteWork: vacancy.remoteWork,
 
@@ -142,7 +184,7 @@ const toPublicVacancy = (vacancy) => {
     trialPeriod: vacancy.trialPeriod,
 
     // ==================================================
-    // APPLICATION
+    // APPLICATION INFORMATION
     // ==================================================
 
     applicationDeadline: vacancy.applicationDeadline,
@@ -153,6 +195,9 @@ const toPublicVacancy = (vacancy) => {
 
     // ==================================================
     // PUBLIC STATUS
+    //
+    // Only published vacancies reach this serializer,
+    // but status is useful to the frontend.
     // ==================================================
 
     status: vacancy.status,
@@ -164,7 +209,8 @@ const toPublicVacancy = (vacancy) => {
 // ======================================================
 // GET AVAILABLE VACANCIES
 //
-// GET /api/seekers/vacancies
+// GET
+// /api/seekers/vacancies
 //
 // CONDITIONS:
 //
@@ -177,15 +223,33 @@ const toPublicVacancy = (vacancy) => {
 
 exports.getPublishedVacancies = async (req, res) => {
   try {
-    const seekerId = req.user.seeker_id;
+    const seekerId = req.user?.seeker_id;
+
+    if (!seekerId) {
+      return res.status(401).json({
+        success: false,
+
+        message: t(
+          req,
+
+          "Job Seeker authentication is required.",
+
+          "求職者としてログインしてください。",
+        ),
+      });
+    }
 
     // ================================================
     // GET VACANCIES ALREADY APPLIED TO
     // ================================================
 
-    const appliedVacancyIds = await Application.distinct("vacancy_id", {
-      seeker_id: seekerId,
-    });
+    const appliedVacancyIds = await Application.distinct(
+      "vacancy_id",
+
+      {
+        seeker_id: seekerId,
+      },
+    );
 
     // ================================================
     // TODAY START
@@ -225,28 +289,38 @@ exports.getPublishedVacancies = async (req, res) => {
           },
         },
       ],
-    }).sort({
-      createdAt: -1,
-    });
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
 
     // ================================================
-    // RESPONSE
+    // SEEKER-SAFE RESPONSE
     // ================================================
+
+    const data = vacancies.map(toSeekerSafeVacancy);
 
     return res.status(200).json({
       success: true,
 
-      count: vacancies.length,
+      count: data.length,
 
-      data: vacancies.map(toPublicVacancy),
+      data,
     });
   } catch (error) {
-    console.error("Get published vacancies error:", error);
+    console.error("GET PUBLISHED SEEKER VACANCIES ERROR:", error);
 
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to get vacancies.", "求人情報の取得に失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to get vacancies.",
+
+        "求人情報の取得に失敗しました。",
+      ),
     });
   }
 };
@@ -254,12 +328,34 @@ exports.getPublishedVacancies = async (req, res) => {
 // ======================================================
 // GET ONE PUBLISHED VACANCY
 //
-// GET /api/seekers/vacancies/:vacancyId
+// GET
+// /api/seekers/vacancies/:vacancyId
+//
+// IMPORTANT:
+//
+// This endpoint follows exactly the same privacy rules
+// as the vacancy list endpoint.
 //
 // ======================================================
 
 exports.getPublishedVacancyById = async (req, res) => {
   try {
+    const seekerId = req.user?.seeker_id;
+
+    if (!seekerId) {
+      return res.status(401).json({
+        success: false,
+
+        message: t(
+          req,
+
+          "Job Seeker authentication is required.",
+
+          "求職者としてログインしてください。",
+        ),
+      });
+    }
+
     const { vacancyId } = req.params;
 
     // ================================================
@@ -272,13 +368,19 @@ exports.getPublishedVacancyById = async (req, res) => {
       status: "published",
 
       isPublished: true,
-    });
+    }).lean();
 
     if (!vacancy) {
       return res.status(404).json({
         success: false,
 
-        message: t(req, "Vacancy not found.", "求人情報が見つかりません。"),
+        message: t(
+          req,
+
+          "Vacancy not found.",
+
+          "求人情報が見つかりません。",
+        ),
       });
     }
 
@@ -290,35 +392,43 @@ exports.getPublishedVacancyById = async (req, res) => {
 
     if (
       vacancy.applicationDeadline &&
-      vacancy.applicationDeadline < todayStart
+      new Date(vacancy.applicationDeadline) < todayStart
     ) {
       return res.status(410).json({
         success: false,
 
         message: t(
           req,
+
           "The application deadline for this vacancy has passed.",
+
           "この求人の応募期限は終了しています。",
         ),
       });
     }
 
     // ================================================
-    // RESPONSE
+    // SEEKER-SAFE RESPONSE
     // ================================================
 
     return res.status(200).json({
       success: true,
 
-      data: toPublicVacancy(vacancy),
+      data: toSeekerSafeVacancy(vacancy),
     });
   } catch (error) {
-    console.error("Get published vacancy error:", error);
+    console.error("GET PUBLISHED SEEKER VACANCY ERROR:", error);
 
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to get vacancy.", "求人情報の取得に失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to get vacancy.",
+
+        "求人情報の取得に失敗しました。",
+      ),
     });
   }
 };

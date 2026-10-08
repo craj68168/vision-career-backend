@@ -4,11 +4,11 @@ const Application = require("../../models/applications/applicationSchema");
 
 const Seeker = require("../../models/seekers/seekerSchema");
 
+const Vacancy = require("../../models/providers/vacancySchema");
+
 const {
   calculatePlacementEligibility,
 } = require("../../utils/seekerProfileStatus");
-
-const Vacancy = require("../../models/providers/vacancySchema");
 
 const { generateResumePdf } = require("../../services/resumeService");
 
@@ -18,42 +18,24 @@ const { createStorageReference } = require("../../utils/storageReference");
 
 const {
   deleteApplicationResumeReference,
-
   sendApplicationResume,
 } = require("../../utils/applicationResumeStorage");
 
 const { seekerMessage } = require("../../utils/seekerMessages");
 
-const t = (req, en, ja) => seekerMessage(req, { en, ja });
+const {
+  SEEKER_EMPLOYER_LABEL,
+  toSeekerVisibleWorkLocation,
+} = require("../../utils/seekerPrivacy");
+
+const t = (req, en, ja) =>
+  seekerMessage(req, {
+    en,
+    ja,
+  });
 
 // ======================================================
-
-// GET START OF TODAY
-
-// ======================================================
-
-//
-
-// Used for application deadline checks.
-
-//
-
-// A vacancy with:
-
-//
-
-// applicationDeadline = 2026-09-16
-
-//
-
-// remains applyable during September 16.
-
-//
-
-// It becomes expired from September 17.
-
-//
-
+// START OF TODAY UTC
 // ======================================================
 
 const getTodayStartUTC = () => {
@@ -65,9 +47,7 @@ const getTodayStartUTC = () => {
 };
 
 // ======================================================
-
-// APPLICATION TRACKING STEPS
-
+// APPLICATION STEPS
 // ======================================================
 
 const APPLICATION_STEPS = [
@@ -76,31 +56,26 @@ const APPLICATION_STEPS = [
 
     label: "Application Submitted",
   },
-
   {
     key: "SENT_TO_PROVIDER",
 
     label: "Sent to Employer",
   },
-
   {
     key: "UNDER_REVIEW",
 
     label: "Under Review",
   },
-
   {
     key: "INTERVIEW",
 
     label: "Interview",
   },
-
   {
     key: "SELECTED",
 
     label: "Selected",
   },
-
   {
     key: "HIRED",
 
@@ -109,19 +84,7 @@ const APPLICATION_STEPS = [
 ];
 
 // ======================================================
-
 // GENERATE APPLICATION ID
-
-//
-
-// Example:
-
-//
-
-// APP-A12B34CD
-
-//
-
 // ======================================================
 
 const generateApplicationId = () => {
@@ -129,18 +92,10 @@ const generateApplicationId = () => {
 };
 
 // ======================================================
-
-// BUILD APPLICATION STATUS TRACKING
-
+// STATUS TRACKING
 // ======================================================
 
 const getStatusTracking = (status) => {
-  // ================================================
-
-  // ADMIN REJECTED
-
-  // ================================================
-
   if (status === "ADMIN_REJECTED") {
     return {
       current_status: status,
@@ -157,7 +112,6 @@ const getStatusTracking = (status) => {
 
           state: "completed",
         },
-
         {
           key: "ADMIN_REJECTED",
 
@@ -168,12 +122,6 @@ const getStatusTracking = (status) => {
       ],
     };
   }
-
-  // ================================================
-
-  // PROVIDER REJECTED
-
-  // ================================================
 
   if (status === "REJECTED") {
     return {
@@ -191,7 +139,6 @@ const getStatusTracking = (status) => {
 
           state: "completed",
         },
-
         {
           key: "SENT_TO_PROVIDER",
 
@@ -199,7 +146,6 @@ const getStatusTracking = (status) => {
 
           state: "completed",
         },
-
         {
           key: "REJECTED",
 
@@ -210,12 +156,6 @@ const getStatusTracking = (status) => {
       ],
     };
   }
-
-  // ================================================
-
-  // NORMAL STATUS
-
-  // ================================================
 
   const currentIndex = APPLICATION_STEPS.findIndex(
     (step) => step.key === status,
@@ -253,38 +193,18 @@ const getStatusTracking = (status) => {
 };
 
 // ======================================================
-
-// SAFE APPLICATION RESPONSE FOR SEEKER
-
+// SAFE SEEKER APPLICATION
 // ======================================================
 
 const toSeekerApplication = (application) => {
   const data = application.toObject ? application.toObject() : application;
 
   return {
-    // ==================================================
-
-    // IDS
-
-    // ==================================================
-
     application_id: data.application_id,
 
     vacancy_id: data.vacancy_id,
 
-    // ==================================================
-
-    // APPLICATION
-
-    // ==================================================
-
     cover_letter: data.cover_letter,
-
-    // ==================================================
-
-    // PROFILE SNAPSHOT
-
-    // ==================================================
 
     profile_snapshot: {
       name: data.profile_snapshot?.name,
@@ -308,40 +228,16 @@ const toSeekerApplication = (application) => {
       employment_history: data.profile_snapshot?.employment_history || [],
     },
 
-    // ==================================================
-
-    // RESUME
-
-    // ==================================================
-
     resume_available: Boolean(data.profile_snapshot?.generated_resume_file),
-
-    // ==================================================
-
-    // STATUS
-
-    // ==================================================
 
     status: data.status,
 
     status_tracking: getStatusTracking(data.status),
 
-    // ==================================================
-
-    // ADMIN REVIEW
-
-    // ==================================================
-
     admin_rejection_reason:
       data.status === "ADMIN_REJECTED" ? data.admin_rejection_reason : null,
 
     admin_reviewed_at: data.admin_reviewed_at || null,
-
-    // ==================================================
-
-    // DATES
-
-    // ==================================================
 
     applied_at: data.applied_at,
 
@@ -352,31 +248,7 @@ const toSeekerApplication = (application) => {
 };
 
 // ======================================================
-
 // SEEKER-SAFE VACANCY SUMMARY
-
-// ======================================================
-
-//
-
-// Used inside My Applications.
-
-//
-
-// Do NOT expose:
-
-//
-
-// - registerId
-
-// - contactPerson
-
-// - contactEmail
-
-// - workLocationDetail
-
-//
-
 // ======================================================
 
 const toSeekerVacancySummary = (vacancy) => {
@@ -387,9 +259,9 @@ const toSeekerVacancySummary = (vacancy) => {
   return {
     vacancyId: vacancy.vacancyId,
 
-    companyName: vacancy.companyName,
+    companyName: SEEKER_EMPLOYER_LABEL,
 
-    companyNameKana: vacancy.companyNameKana,
+    companyNameKana: null,
 
     title: vacancy.title,
 
@@ -403,7 +275,7 @@ const toSeekerVacancySummary = (vacancy) => {
 
     japaneseLevel: vacancy.japaneseLevel,
 
-    workLocation: vacancy.workLocation,
+    workLocation: toSeekerVisibleWorkLocation(vacancy.workLocation),
 
     remoteWork: vacancy.remoteWork,
 
@@ -418,29 +290,15 @@ const toSeekerVacancySummary = (vacancy) => {
 };
 
 // ======================================================
-
-// BUILD PROFESSIONAL PROFILE SNAPSHOT
-
-// ======================================================
-
+// BUILD FROZEN PROFESSIONAL SNAPSHOT
 //
-
-// DO NOT include:
-
+// Do not include:
 //
-
 // - email
-
 // - phone
-
 // - address
-
-// - profile photo
-
+// - current location
 // - private documents
-
-//
-
 // ======================================================
 
 const buildProfileSnapshot = (seeker) => {
@@ -461,12 +319,6 @@ const buildProfileSnapshot = (seeker) => {
 
     desired_location: seeker.desired_location,
 
-    // ==================================================
-
-    // EDUCATION
-
-    // ==================================================
-
     education: (seeker.education || []).map((education) => ({
       enrollment_date: education.enrollment_date,
 
@@ -478,12 +330,6 @@ const buildProfileSnapshot = (seeker) => {
 
       major: education.major,
     })),
-
-    // ==================================================
-
-    // EMPLOYMENT
-
-    // ==================================================
 
     employment_history: (seeker.employment_history || []).map((employment) => ({
       start_date: employment.start_date,
@@ -498,29 +344,7 @@ const buildProfileSnapshot = (seeker) => {
 };
 
 // ======================================================
-
 // APPLY FOR VACANCY
-
-//
-
-// POST /api/seekers/applications
-
-//
-
-// BODY:
-
-//
-
-// {
-
-//   "vacancyId": "V-000017",
-
-//   "coverLetter": null
-
-// }
-
-//
-
 // ======================================================
 
 exports.applyForVacancy = async (req, res) => {
@@ -529,19 +353,7 @@ exports.applyForVacancy = async (req, res) => {
   let applicationResumeReference = null;
 
   try {
-    // ================================================
-
-    // LOGGED-IN SEEKER
-
-    // ================================================
-
     const seekerId = req.user.seeker_id;
-
-    // ================================================
-
-    // REQUEST DATA
-
-    // ================================================
 
     const { vacancyId, coverLetter } = req.body;
 
@@ -549,15 +361,15 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(400).json({
         success: false,
 
-        message: t(req, "vacancyId is required.", "求人IDは必須です。"),
+        message: t(
+          req,
+
+          "vacancyId is required.",
+
+          "求人IDは必須です。",
+        ),
       });
     }
-
-    // ================================================
-
-    // FIND SEEKER
-
-    // ================================================
 
     const seeker = await Seeker.findOne({
       seeker_id: seekerId,
@@ -567,58 +379,55 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: t(req, "Job Seeker not found.", "求職者が見つかりません。"),
+        message: t(
+          req,
+
+          "Job Seeker not found.",
+
+          "求職者が見つかりません。",
+        ),
       });
     }
 
-    // ================================================
+    const eligibility = calculatePlacementEligibility(seeker);
 
-    // SEEKER MUST BE PLACEMENT ELIGIBLE
-
-    // ================================================
-
-    const placementEligibility = calculatePlacementEligibility(seeker);
-
-    if (!placementEligibility.isEligible) {
+    if (!eligibility.isEligible) {
       return res.status(403).json({
         success: false,
 
         status: "NOT_PLACEMENT_ELIGIBLE",
 
-        message: !placementEligibility.profile.isComplete
+        message: !eligibility.profile.isComplete
           ? t(
               req,
+
               "Please complete your profile before applying for vacancies.",
+
               "求人に応募する前にプロフィールを完成させてください。",
             )
           : t(
               req,
+
               "Your account is not currently eligible to apply for vacancies.",
+
               "現在、このアカウントでは求人に応募できません。",
             ),
 
         data: {
           placement_eligible: false,
 
-          placement_status: placementEligibility.status,
+          placement_status: eligibility.status,
 
-          profile_complete: placementEligibility.profile.isComplete,
+          profile_complete: eligibility.profile.isComplete,
 
-          completion_percentage:
-            placementEligibility.profile.completionPercentage,
+          completion_percentage: eligibility.profile.completionPercentage,
 
-          missing_fields: placementEligibility.profile.missingFields,
+          missing_fields: eligibility.profile.missingFields,
 
-          reasons: placementEligibility.reasons,
+          reasons: eligibility.reasons,
         },
       });
     }
-
-    // ================================================
-
-    // FIND VACANCY
-
-    // ================================================
 
     const vacancy = await Vacancy.findOne({
       vacancyId,
@@ -628,15 +437,15 @@ exports.applyForVacancy = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: t(req, "Vacancy not found.", "求人情報が見つかりません。"),
+        message: t(
+          req,
+
+          "Vacancy not found.",
+
+          "求人情報が見つかりません。",
+        ),
       });
     }
-
-    // ================================================
-
-    // VACANCY MUST BE PUBLISHED
-
-    // ================================================
 
     if (vacancy.status !== "published" || vacancy.isPublished !== true) {
       return res.status(400).json({
@@ -644,17 +453,13 @@ exports.applyForVacancy = async (req, res) => {
 
         message: t(
           req,
+
           "This vacancy is not currently available for applications.",
+
           "この求人は現在応募できません。",
         ),
       });
     }
-
-    // ================================================
-
-    // APPLICATION DEADLINE
-
-    // ================================================
 
     const todayStart = getTodayStartUTC();
 
@@ -667,17 +472,13 @@ exports.applyForVacancy = async (req, res) => {
 
         message: t(
           req,
+
           "The application deadline for this vacancy has passed.",
+
           "この求人の応募期限は終了しています。",
         ),
       });
     }
-
-    // ================================================
-
-    // PROVIDER ID FROM VACANCY
-
-    // ================================================
 
     const providerId = vacancy.registerId;
 
@@ -687,71 +488,41 @@ exports.applyForVacancy = async (req, res) => {
 
         message: t(
           req,
+
           "Vacancy provider information is missing.",
+
           "求人企業情報が見つかりません。",
         ),
       });
     }
 
-    // ================================================
-
-    // DUPLICATE APPLICATION CHECK
-
-    // ================================================
-
-    const existingApplication = await Application.findOne({
+    const existing = await Application.findOne({
       seeker_id: seekerId,
 
       vacancy_id: vacancy.vacancyId,
     });
 
-    if (existingApplication) {
+    if (existing) {
       return res.status(409).json({
         success: false,
 
         message: t(
           req,
+
           "You have already applied for this vacancy.",
+
           "この求人には既に応募済みです。",
         ),
       });
     }
 
-    // ================================================
-
-    // GENERATE APPLICATION ID
-
-    // ================================================
-
     applicationId = generateApplicationId();
-
-    // ================================================
-
-    // GENERATE APPLICATION-SPECIFIC FROZEN RESUME
-
-    // ================================================
 
     const generatedResume = await generateResumePdf(seeker, {
       type: "application",
 
       applicationId,
     });
-
-    // ================================================
-
-    // UPLOAD FROZEN RESUME TO SUPABASE
-
-    //
-
-    // applications/
-
-    //   APP-XXXXXXXX/
-
-    //     resume/
-
-    //       uuid-APP-XXXXXXXX.pdf
-
-    // ================================================
 
     const uploadedResume = await uploadBuffer({
       buffer: generatedResume.buffer,
@@ -765,21 +536,9 @@ exports.applyForVacancy = async (req, res) => {
 
     applicationResumeReference = createStorageReference(uploadedResume.key);
 
-    // ================================================
-
-    // BUILD PROFILE SNAPSHOT
-
-    // ================================================
-
     const profileSnapshot = buildProfileSnapshot(seeker);
 
     profileSnapshot.generated_resume_file = applicationResumeReference;
-
-    // ================================================
-
-    // CREATE APPLICATION
-
-    // ================================================
 
     const application = await Application.create({
       application_id: applicationId,
@@ -799,32 +558,17 @@ exports.applyForVacancy = async (req, res) => {
       applied_at: new Date(),
     });
 
-    // ==================================================
-
-    // DATABASE SAVE SUCCEEDED
-
-    //
-
-    // The frozen resume now belongs permanently to this
-
-    // application.
-
-    // ==================================================
-
+    // Resume now belongs to DB record.
     applicationResumeReference = null;
-
-    // ================================================
-
-    // SUCCESS
-
-    // ================================================
 
     return res.status(201).json({
       success: true,
 
       message: t(
         req,
+
         "Application submitted successfully and is pending admin review.",
+
         "応募を送信しました。管理者の確認待ちです。",
       ),
 
@@ -841,20 +585,6 @@ exports.applyForVacancy = async (req, res) => {
   } catch (error) {
     console.error("Apply for vacancy error:", error);
 
-    // ================================================
-
-    // REMOVE ORPHAN SUPABASE RESUME
-
-    //
-
-    // Example:
-
-    // Upload succeeds but MongoDB application creation
-
-    // fails.
-
-    // ================================================
-
     if (applicationResumeReference) {
       try {
         await deleteApplicationResumeReference({
@@ -867,29 +597,19 @@ exports.applyForVacancy = async (req, res) => {
       }
     }
 
-    // ================================================
-
-    // DUPLICATE APPLICATION
-
-    // ================================================
-
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
 
         message: t(
           req,
+
           "You have already applied for this vacancy.",
+
           "この求人には既に応募済みです。",
         ),
       });
     }
-
-    // ================================================
-
-    // MONGOOSE VALIDATION
-
-    // ================================================
 
     if (error.name === "ValidationError") {
       return res.status(400).json({
@@ -897,7 +617,9 @@ exports.applyForVacancy = async (req, res) => {
 
         message: t(
           req,
+
           "Please check your application and try again.",
+
           "応募内容を確認してもう一度お試しください。",
         ),
       });
@@ -906,19 +628,19 @@ exports.applyForVacancy = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to submit application.", "応募の送信に失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to submit application.",
+
+        "応募の送信に失敗しました。",
+      ),
     });
   }
 };
 
 // ======================================================
-
 // GET MY APPLICATIONS
-
-//
-
-// GET /api/seekers/applications
-
 // ======================================================
 
 exports.getMyApplications = async (req, res) => {
@@ -975,19 +697,19 @@ exports.getMyApplications = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to get applications.", "応募一覧の取得に失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to get applications.",
+
+        "応募一覧の取得に失敗しました。",
+      ),
     });
   }
 };
 
 // ======================================================
-
 // GET ONE APPLICATION
-
-//
-
-// GET /api/seekers/applications/:application_id
-
 // ======================================================
 
 exports.getMyApplicationById = async (req, res) => {
@@ -1006,7 +728,13 @@ exports.getMyApplicationById = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: t(req, "Application not found.", "応募情報が見つかりません。"),
+        message: t(
+          req,
+
+          "Application not found.",
+
+          "応募情報が見つかりません。",
+        ),
       });
     }
 
@@ -1029,21 +757,19 @@ exports.getMyApplicationById = async (req, res) => {
     return res.status(500).json({
       success: false,
 
-      message: t(req, "Failed to get application.", "応募情報の取得に失敗しました。"),
+      message: t(
+        req,
+
+        "Failed to get application.",
+
+        "応募情報の取得に失敗しました。",
+      ),
     });
   }
 };
 
 // ======================================================
-
-// VIEW APPLICATION FROZEN RESUME
-
-//
-
-// GET
-
-// /api/seekers/applications/:application_id/resume
-
+// GET FROZEN APPLICATION RESUME
 // ======================================================
 
 exports.getMyApplicationResume = async (req, res) => {
@@ -1062,15 +788,15 @@ exports.getMyApplicationResume = async (req, res) => {
       return res.status(404).json({
         success: false,
 
-        message: t(req, "Application not found.", "応募情報が見つかりません。"),
+        message: t(
+          req,
+
+          "Application not found.",
+
+          "応募情報が見つかりません。",
+        ),
       });
     }
-
-    // ==================================================
-
-    // FROZEN APPLICATION RESUME ONLY
-
-    // ==================================================
 
     const storedResume = application.profile_snapshot?.generated_resume_file;
 
@@ -1080,29 +806,13 @@ exports.getMyApplicationResume = async (req, res) => {
 
         message: t(
           req,
+
           "No resume is attached to this application.",
+
           "この応募には履歴書が添付されていません。",
         ),
       });
     }
-
-    // ==================================================
-
-    // Supports:
-
-    //
-
-    // New:
-
-    // storage://applications/...
-
-    //
-
-    // Legacy:
-
-    // application-resumes/APP-XXXXXXXX.pdf
-
-    // ==================================================
 
     await sendApplicationResume({
       res,
@@ -1130,18 +840,24 @@ exports.getMyApplicationResume = async (req, res) => {
         statusCode === 404
           ? t(
               req,
+
               "Application resume file not found.",
+
               "応募時の履歴書ファイルが見つかりません。",
             )
           : statusCode === 403
             ? t(
                 req,
+
                 "Application resume access denied.",
+
                 "応募時の履歴書にアクセスできません。",
               )
             : t(
                 req,
+
                 "Failed to get application resume.",
+
                 "応募時の履歴書の取得に失敗しました。",
               ),
     });

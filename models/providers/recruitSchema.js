@@ -1,5 +1,85 @@
 const mongoose = require("mongoose");
 
+// ======================================================
+// WORKFLOW HISTORY
+//
+// IMPORTANT:
+//
+// This contains internal Admin / Staff audit information.
+//
+// select: false is used on the parent field so Provider
+// APIs do not accidentally expose internal actor IDs,
+// actor names or workflow history.
+//
+// Admin / Staff controllers must explicitly use:
+//
+// .select("+workflow_history")
+//
+// ======================================================
+
+const workflowHistorySchema = new mongoose.Schema(
+  {
+    action: {
+      type: String,
+      enum: [
+        "SCREENED",
+        "NEEDS_ATTENTION",
+        "APPROVED",
+        "REJECTED",
+        "RESUBMITTED",
+      ],
+      required: true,
+    },
+
+    from_status: {
+      type: String,
+      default: null,
+    },
+
+    to_status: {
+      type: String,
+      default: null,
+    },
+
+    actor_role: {
+      type: String,
+      enum: ["admin", "staff", "provider", "system"],
+      default: null,
+    },
+
+    actor_id: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    actor_name_snapshot: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    created_at: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: false,
+  },
+);
+
+// ======================================================
+// RECRUIT / PLACEMENT REQUEST SCHEMA
+// ======================================================
+
 const recruitSchema = new mongoose.Schema(
   {
     // ==================================================
@@ -190,10 +270,41 @@ const recruitSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // ==================================================
+    // COMPLETE INTERNAL WORKFLOW HISTORY
+    //
+    // DO NOT expose this to Provider APIs.
+    // ==================================================
+
+    workflow_history: {
+      type: [workflowHistorySchema],
+      default: [],
+      select: false,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+// ======================================================
+// INDEXES
+// ======================================================
+
+recruitSchema.index({
+  company_id: 1,
+  createdAt: -1,
+});
+
+recruitSchema.index({
+  status: 1,
+  createdAt: -1,
+});
+
+recruitSchema.index({
+  staff_screening_status: 1,
+  createdAt: -1,
+});
 
 module.exports = mongoose.model("Recruit", recruitSchema);
