@@ -39,20 +39,33 @@ const PROVIDER_VISIBLE_STATUSES = [
 ];
 
 // ======================================================
-// PROVIDER ALLOWED DECISIONS
+// PROVIDER STATUS TRANSITIONS
+//
+// IMPORTANT:
+//
+// INTERVIEW is intentionally NOT directly allowed here.
+//
+// UNDER_REVIEW -> INTERVIEW must happen through:
+//
+// POST /providers/interviews
+//
+// This guarantees that an application cannot be moved to
+// INTERVIEW without an actual interview record.
 // ======================================================
 
-const PROVIDER_UPDATE_STATUSES = [
-  "UNDER_REVIEW",
+const PROVIDER_STATUS_TRANSITIONS = {
+  SENT_TO_PROVIDER: ["UNDER_REVIEW", "REJECTED"],
 
-  "INTERVIEW",
+  UNDER_REVIEW: ["REJECTED"],
 
-  "SELECTED",
+  INTERVIEW: ["SELECTED", "REJECTED"],
 
-  "HIRED",
+  SELECTED: ["HIRED", "REJECTED"],
 
-  "REJECTED",
-];
+  HIRED: [],
+
+  REJECTED: [],
+};
 
 // ======================================================
 // PROVIDER-SAFE EDUCATION
@@ -88,9 +101,9 @@ const toProviderEmployment = (employment) => ({
 // PROVIDER'S OWN VACANCY SUMMARY
 //
 // Provider may see its own company information.
-// This privacy rule applies in the opposite direction:
 //
-// Job Seeker must not see real Provider/company identity.
+// Job Seeker must not receive real Provider/company
+// identity through the seeker-side API.
 // ======================================================
 
 const toProviderVacancySummary = (vacancy) => {
@@ -139,7 +152,7 @@ const toProviderVacancySummary = (vacancy) => {
 // - desired job/location
 // - education
 // - employment history
-// - professional resume
+// - professional resume availability
 //
 // Provider MUST NOT receive:
 //
@@ -158,6 +171,7 @@ const toProviderVacancySummary = (vacancy) => {
 // photo_available is only a Boolean.
 //
 // Never return:
+//
 // seeker.profile_photo
 // ======================================================
 
@@ -189,10 +203,9 @@ const toProviderApplication = (application, vacancy, seeker) => {
       //
       // Provider receives only availability.
       //
-      // Actual image must be requested through:
+      // Actual image is requested through:
       //
       // /api/providers/applications/:applicationId/photo
-      //
       // =================================================
 
       photo_available: Boolean(seeker?.profile_photo),
@@ -301,6 +314,10 @@ exports.getProviderApplications = async (req, res) => {
       },
     };
 
+    // ==================================================
+    // OPTIONAL STATUS FILTER
+    // ==================================================
+
     if (status) {
       if (!PROVIDER_VISIBLE_STATUSES.includes(status)) {
         return res.status(400).json({
@@ -322,7 +339,11 @@ exports.getProviderApplications = async (req, res) => {
     // ==================================================
 
     const vacancyIds = [
-      ...new Set(applications.map((application) => application.vacancy_id)),
+      ...new Set(
+        applications
+          .map((application) => application.vacancy_id)
+          .filter(Boolean),
+      ),
     ];
 
     const vacancies =
@@ -343,7 +364,7 @@ exports.getProviderApplications = async (req, res) => {
     // ==================================================
     // SEEKERS
     //
-    // Used internally for profile photo availability.
+    // Used internally only.
     // ==================================================
 
     const seekerMap = await loadSeekerMap(applications);
@@ -442,13 +463,7 @@ exports.getProviderApplicationById = async (req, res) => {
     return res.status(200).json({
       status: "success",
 
-      data: toProviderApplication(
-        application,
-
-        vacancy,
-
-        seeker,
-      ),
+      data: toProviderApplication(application, vacancy, seeker),
     });
   } catch (error) {
     console.error("Get provider application error:", error);
@@ -474,13 +489,13 @@ exports.getProviderApplicationById = async (req, res) => {
 //        ↓
 // Application belongs to Provider
 //        ↓
-// Application must already be approved
+// Application already passed Admin/Staff approval
 //        ↓
 // Get internal seeker_id
 //        ↓
 // Load private profile_photo
 //        ↓
-// Validate storage prefix
+// Validate/storage utility
 //        ↓
 // Stream image
 //
@@ -532,7 +547,7 @@ exports.getProviderApplicationPhoto = async (req, res) => {
     // ==================================================
     // SEEKER PHOTO
     //
-    // Internal seeker ID is used only on backend.
+    // seeker_id is used only internally.
     // ==================================================
 
     const seeker = await Seeker.findOne({
@@ -665,6 +680,20 @@ exports.getProviderApplicationResume = async (req, res) => {
 
 // ======================================================
 // UPDATE APPLICATION STATUS
+//
+// IMPORTANT:
+//
+// Status transitions are enforced on backend.
+//
+// Direct:
+//
+// UNDER_REVIEW -> INTERVIEW
+//
+// is NOT allowed.
+//
+// Interview status must be created through:
+//
+// POST /providers/interviews
 // ======================================================
 
 exports.updateProviderApplicationStatus = async (req, res) => {
@@ -683,6 +712,10 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // STATUS REQUIRED
+    // ==================================================
+
     if (!status) {
       return res.status(400).json({
         status: "error",
@@ -691,13 +724,9 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       });
     }
 
-    if (!PROVIDER_UPDATE_STATUSES.includes(status)) {
-      return res.status(400).json({
-        status: "error",
-
-        message: "Invalid application status.",
-      });
-    }
+    // ==================================================
+    // LOAD PROVIDER'S APPLICATION
+    // ==================================================
 
     const application = await Application.findOne({
       application_id: applicationId,
@@ -717,17 +746,32 @@ exports.updateProviderApplicationStatus = async (req, res) => {
       });
     }
 
-    if (application.status === "HIRED" || application.status === "REJECTED") {
+    // ==================================================
+    // VALIDATE STATUS TRANSITION
+    // ==================================================
+
+    const allowedNextStatuses =
+      PROVIDER_STATUS_TRANSITIONS[application.status] || [];
+
+    if (!allowedNextStatuses.includes(status)) {
       return res.status(400).json({
         status: "error",
 
-        message: "This application has already been completed.",
+        message: `Cannot change application status from ${application.status} to ${status}.`,
       });
     }
+
+    // ==================================================
+    // UPDATE
+    // ==================================================
 
     application.status = status;
 
     await application.save();
+
+    // ==================================================
+    // LOAD SAFE RELATED INFORMATION
+    // ==================================================
 
     const [vacancy, seeker] = await Promise.all([
       Vacancy.findOne({
@@ -761,13 +805,7 @@ exports.updateProviderApplicationStatus = async (req, res) => {
 
       message: "Application status updated successfully.",
 
-      data: toProviderApplication(
-        application,
-
-        vacancy,
-
-        seeker,
-      ),
+      data: toProviderApplication(application, vacancy, seeker),
     });
   } catch (error) {
     console.error("Update provider application status error:", error);
