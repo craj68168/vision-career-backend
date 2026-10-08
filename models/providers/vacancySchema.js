@@ -1,6 +1,93 @@
 const mongoose = require("mongoose");
 
 // ======================================================
+// WORKFLOW HISTORY
+// ======================================================
+
+const vacancyWorkflowHistorySchema = new mongoose.Schema(
+  {
+    action: {
+      type: String,
+      enum: [
+        "SCREENED",
+        "NEEDS_ATTENTION",
+        "APPROVED",
+        "REJECTED",
+        "PUBLISHED",
+        "CLOSED",
+      ],
+      required: true,
+    },
+
+    from_status: {
+      type: String,
+      enum: [
+        "draft",
+        "pending_review",
+        "approved",
+        "rejected",
+        "published",
+        "closed",
+      ],
+      default: null,
+    },
+
+    to_status: {
+      type: String,
+      enum: [
+        "draft",
+        "pending_review",
+        "approved",
+        "rejected",
+        "published",
+        "closed",
+      ],
+      default: null,
+    },
+
+    actor_type: {
+      type: String,
+      enum: ["admin", "staff"],
+      required: true,
+    },
+
+    actor_id: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    actor_name: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    reason: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    note: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 2000,
+    },
+
+    created_at: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: true,
+  },
+);
+
+// ======================================================
 // VACANCY SCHEMA
 // ======================================================
 
@@ -265,9 +352,32 @@ const vacancySchema = new mongoose.Schema(
       index: true,
     },
 
+    // ==================================================
+    // CURRENT REVIEW
+    // ==================================================
+
     reviewedAt: {
       type: Date,
       default: null,
+    },
+
+    reviewedByType: {
+      type: String,
+      enum: ["admin", "staff"],
+      default: null,
+    },
+
+    reviewedById: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    reviewedByName: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     rejectionReason: {
@@ -278,13 +388,51 @@ const vacancySchema = new mongoose.Schema(
     },
 
     // ==================================================
+    // PUBLICATION AUDIT
+    // ==================================================
+
+    publishedAt: {
+      type: Date,
+      default: null,
+    },
+
+    publishedByAdminId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    publishedByAdminName: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // ==================================================
+    // CLOSING AUDIT
+    // ==================================================
+
+    closedAt: {
+      type: Date,
+      default: null,
+    },
+
+    closedByAdminId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    closedByAdminName: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // ==================================================
     // STAFF SCREENING
-    //
-    // IMPORTANT:
-    //
-    // Staff screening does NOT change vacancy.status.
-    //
-    // Staff only prepares information for Admin.
     // ==================================================
 
     staff_screening_status: {
@@ -307,9 +455,24 @@ const vacancySchema = new mongoose.Schema(
       index: true,
     },
 
+    screened_by_staff_name: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
     screened_at: {
       type: Date,
       default: null,
+    },
+
+    // ==================================================
+    // COMPLETE WORKFLOW HISTORY
+    // ==================================================
+
+    workflow_history: {
+      type: [vacancyWorkflowHistorySchema],
+      default: [],
     },
   },
   {
@@ -329,6 +492,11 @@ vacancySchema.index({
 vacancySchema.index({
   status: 1,
   isPublished: 1,
+});
+
+vacancySchema.index({
+  reviewedById: 1,
+  reviewedAt: -1,
 });
 
 module.exports = mongoose.model("Vacancy", vacancySchema);

@@ -1,4 +1,5 @@
 const Vacancy = require("../../models/providers/vacancySchema");
+
 const Provider = require("../../models/providers/registerSchema");
 
 // ======================================================
@@ -15,20 +16,178 @@ const VACANCY_STATUSES = [
 ];
 
 // ======================================================
+// ACTOR
+// ======================================================
+
+const getAdminActor = (req) => ({
+  type: "admin",
+
+  id:
+    req.admin?.adminId || req.admin?.id || req.admin?._id?.toString?.() || null,
+
+  name: req.admin?.name || req.admin?.fullName || req.admin?.email || "Admin",
+});
+
+// ======================================================
+// WORKFLOW HISTORY
+// ======================================================
+
+const addWorkflowHistory = (
+  vacancy,
+  { action, fromStatus, toStatus, actor, reason = null, note = null },
+) => {
+  if (!Array.isArray(vacancy.workflow_history)) {
+    vacancy.workflow_history = [];
+  }
+
+  vacancy.workflow_history.push({
+    action,
+
+    from_status: fromStatus || null,
+
+    to_status: toStatus || null,
+
+    actor_type: actor.type,
+
+    actor_id: actor.id,
+
+    actor_name: actor.name,
+
+    reason,
+
+    note,
+
+    created_at: new Date(),
+  });
+};
+
+// ======================================================
 // STAFF SCREENING SERIALIZER
 // ======================================================
 
-const serializeStaffScreening = (vacancy) => {
-  return {
-    status: vacancy.staff_screening_status || "NOT_SCREENED",
+const serializeStaffScreening = (vacancy) => ({
+  status: vacancy.staff_screening_status || "NOT_SCREENED",
 
-    note: vacancy.staff_screening_note || null,
+  note: vacancy.staff_screening_note || null,
 
-    screenedByStaffId: vacancy.screened_by_staff_id || null,
+  screenedByStaffId: vacancy.screened_by_staff_id || null,
 
-    screenedAt: vacancy.screened_at || null,
-  };
+  screenedByStaffName: vacancy.screened_by_staff_name || null,
+
+  screenedAt: vacancy.screened_at || null,
+});
+
+// ======================================================
+// REVIEW SERIALIZER
+// ======================================================
+
+const serializeReview = (vacancy) => ({
+  reviewedAt: vacancy.reviewedAt || null,
+
+  reviewedByType: vacancy.reviewedByType || null,
+
+  reviewedById: vacancy.reviewedById || null,
+
+  reviewedByName: vacancy.reviewedByName || null,
+
+  rejectionReason: vacancy.rejectionReason || null,
+});
+
+// ======================================================
+// PUBLICATION SERIALIZER
+// ======================================================
+
+const serializePublication = (vacancy) => ({
+  publishedAt: vacancy.publishedAt || null,
+
+  publishedByAdminId: vacancy.publishedByAdminId || null,
+
+  publishedByAdminName: vacancy.publishedByAdminName || null,
+});
+
+// ======================================================
+// CLOSING SERIALIZER
+// ======================================================
+
+const serializeClosing = (vacancy) => ({
+  closedAt: vacancy.closedAt || null,
+
+  closedByAdminId: vacancy.closedByAdminId || null,
+
+  closedByAdminName: vacancy.closedByAdminName || null,
+});
+
+// ======================================================
+// HISTORY SERIALIZER
+// ======================================================
+
+const serializeWorkflowHistory = (vacancy) => {
+  const history = Array.isArray(vacancy.workflow_history)
+    ? vacancy.workflow_history
+    : [];
+
+  return history
+    .map((entry) => ({
+      id: entry._id ? String(entry._id) : null,
+
+      action: entry.action,
+
+      fromStatus: entry.from_status || null,
+
+      toStatus: entry.to_status || null,
+
+      actorType: entry.actor_type,
+
+      actorId: entry.actor_id || null,
+
+      actorName: entry.actor_name || null,
+
+      reason: entry.reason || null,
+
+      note: entry.note || null,
+
+      createdAt: entry.created_at || null,
+    }))
+    .sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+
+      return bTime - aTime;
+    });
 };
+
+// ======================================================
+// PROVIDER INTERNAL DETAILS
+// ======================================================
+
+const serializeProvider = (provider, vacancy) => ({
+  registerId: provider?.registerId || vacancy.registerId,
+
+  name: provider?.name || null,
+
+  companyName: provider?.companyName || vacancy.companyName,
+
+  email: provider?.email || null,
+
+  phone: provider?.phone || null,
+
+  address: provider?.address || null,
+
+  industry: provider?.industry || null,
+
+  contactPerson: provider?.contact_person || null,
+
+  contactPersonPhone: provider?.contact_person_phone || null,
+
+  contactPersonEmail: provider?.contact_person_email || null,
+
+  website: provider?.website || null,
+
+  hiringNeeds: provider?.hiring_needs || null,
+
+  notes: provider?.notes || null,
+});
 
 // ======================================================
 // PROVIDER MAP
@@ -39,7 +198,7 @@ const getProviderMap = async (vacancies) => {
     ...new Set(vacancies.map((vacancy) => vacancy.registerId).filter(Boolean)),
   ];
 
-  if (registerIds.length === 0) {
+  if (!registerIds.length) {
     return new Map();
   }
 
@@ -56,216 +215,159 @@ const getProviderMap = async (vacancies) => {
 // LIST SERIALIZER
 // ======================================================
 
-const toVacancyListItem = (vacancy, provider) => {
-  return {
-    vacancyId: vacancy.vacancyId,
+const toVacancyListItem = (vacancy, provider) => ({
+  vacancyId: vacancy.vacancyId,
 
-    registerId: vacancy.registerId,
+  registerId: vacancy.registerId,
 
-    companyName: vacancy.companyName,
+  companyName: vacancy.companyName,
 
-    companyNameKana: vacancy.companyNameKana,
+  companyNameKana: vacancy.companyNameKana,
 
-    title: vacancy.title,
+  title: vacancy.title,
 
-    titleKana: vacancy.titleKana,
+  titleKana: vacancy.titleKana,
 
-    employmentType: vacancy.employmentType,
+  employmentType: vacancy.employmentType,
 
-    numberOfPeople: vacancy.numberOfPeople,
+  numberOfPeople: vacancy.numberOfPeople,
 
-    japaneseLevel: vacancy.japaneseLevel,
+  japaneseLevel: vacancy.japaneseLevel,
 
-    workLocation: vacancy.workLocation,
+  workLocation: vacancy.workLocation,
 
-    remoteWork: vacancy.remoteWork,
+  remoteWork: vacancy.remoteWork,
 
-    salaryMin: vacancy.salaryMin,
+  salaryMin: vacancy.salaryMin,
 
-    salaryMax: vacancy.salaryMax,
+  salaryMax: vacancy.salaryMax,
 
-    applicationDeadline: vacancy.applicationDeadline,
+  applicationDeadline: vacancy.applicationDeadline,
 
-    status: vacancy.status,
+  status: vacancy.status,
 
-    isPublished: vacancy.isPublished,
+  isPublished: vacancy.isPublished,
 
-    reviewedAt: vacancy.reviewedAt,
+  review: serializeReview(vacancy),
 
-    rejectionReason: vacancy.rejectionReason,
+  publication: serializePublication(vacancy),
 
-    createdAt: vacancy.createdAt,
+  closing: serializeClosing(vacancy),
 
-    updatedAt: vacancy.updatedAt,
+  staffScreening: serializeStaffScreening(vacancy),
 
-    // ==================================================
-    // STAFF SCREENING
-    // ==================================================
+  createdAt: vacancy.createdAt,
 
-    staffScreening: serializeStaffScreening(vacancy),
+  updatedAt: vacancy.updatedAt,
 
-    // ==================================================
-    // PROVIDER
-    // ==================================================
+  provider: {
+    registerId: provider?.registerId || vacancy.registerId,
 
-    provider: {
-      registerId: provider?.registerId || vacancy.registerId,
+    name: provider?.name || null,
 
-      name: provider?.name || null,
+    companyName: provider?.companyName || vacancy.companyName,
 
-      companyName: provider?.companyName || vacancy.companyName,
-
-      email: provider?.email || null,
-    },
-  };
-};
+    email: provider?.email || null,
+  },
+});
 
 // ======================================================
-// FULL DETAILS SERIALIZER
+// DETAILS SERIALIZER
 // ======================================================
 
-const toVacancyDetails = (vacancy, provider) => {
-  return {
-    vacancyId: vacancy.vacancyId,
+const toVacancyDetails = (vacancy, provider) => ({
+  vacancyId: vacancy.vacancyId,
 
-    registerId: vacancy.registerId,
+  registerId: vacancy.registerId,
 
-    // ==================================================
-    // COMPANY
-    // ==================================================
+  companyName: vacancy.companyName,
 
-    companyName: vacancy.companyName,
+  companyNameKana: vacancy.companyNameKana,
 
-    companyNameKana: vacancy.companyNameKana,
+  title: vacancy.title,
 
-    // ==================================================
-    // POSITION
-    // ==================================================
+  titleKana: vacancy.titleKana,
 
-    title: vacancy.title,
+  employmentType: vacancy.employmentType,
 
-    titleKana: vacancy.titleKana,
+  numberOfPeople: vacancy.numberOfPeople,
 
-    employmentType: vacancy.employmentType,
+  jobDescription: vacancy.jobDescription,
 
-    numberOfPeople: vacancy.numberOfPeople,
+  responsibilities: vacancy.responsibilities,
 
-    // ==================================================
-    // DESCRIPTION
-    // ==================================================
+  requiredSkills: vacancy.requiredSkills,
 
-    jobDescription: vacancy.jobDescription,
+  preferredSkills: vacancy.preferredSkills,
 
-    responsibilities: vacancy.responsibilities,
+  requiredEducation: vacancy.requiredEducation,
 
-    // ==================================================
-    // REQUIREMENTS
-    // ==================================================
+  requiredExperience: vacancy.requiredExperience,
 
-    requiredSkills: vacancy.requiredSkills,
+  japaneseLevel: vacancy.japaneseLevel,
 
-    preferredSkills: vacancy.preferredSkills,
+  workLocation: vacancy.workLocation,
 
-    requiredEducation: vacancy.requiredEducation,
+  workLocationDetail: vacancy.workLocationDetail,
 
-    requiredExperience: vacancy.requiredExperience,
+  remoteWork: vacancy.remoteWork,
 
-    japaneseLevel: vacancy.japaneseLevel,
+  salaryMin: vacancy.salaryMin,
 
-    // ==================================================
-    // LOCATION / SALARY
-    // ==================================================
+  salaryMax: vacancy.salaryMax,
 
-    workLocation: vacancy.workLocation,
+  salaryNote: vacancy.salaryNote,
 
-    workLocationDetail: vacancy.workLocationDetail,
+  workHours: vacancy.workHours,
 
-    remoteWork: vacancy.remoteWork,
+  breakTime: vacancy.breakTime,
 
-    salaryMin: vacancy.salaryMin,
+  overtime: vacancy.overtime,
 
-    salaryMax: vacancy.salaryMax,
+  holidays: vacancy.holidays,
 
-    salaryNote: vacancy.salaryNote,
+  benefits: vacancy.benefits || [],
 
-    // ==================================================
-    // SCHEDULE
-    // ==================================================
+  insurance: vacancy.insurance || [],
 
-    workHours: vacancy.workHours,
+  trialPeriod: vacancy.trialPeriod,
 
-    breakTime: vacancy.breakTime,
+  applicationDeadline: vacancy.applicationDeadline,
 
-    overtime: vacancy.overtime,
+  startDate: vacancy.startDate,
 
-    holidays: vacancy.holidays,
+  selectionProcess: vacancy.selectionProcess,
 
-    // ==================================================
-    // BENEFITS
-    // ==================================================
+  // ====================================================
+  // PRIVATE INTERNAL CONTACT
+  // ====================================================
 
-    benefits: vacancy.benefits || [],
+  contactPerson: vacancy.contactPerson,
 
-    insurance: vacancy.insurance || [],
+  contactPersonKana: vacancy.contactPersonKana,
 
-    trialPeriod: vacancy.trialPeriod,
+  contactEmail: vacancy.contactEmail,
 
-    // ==================================================
-    // APPLICATION INFORMATION
-    // ==================================================
+  status: vacancy.status,
 
-    applicationDeadline: vacancy.applicationDeadline,
+  isPublished: vacancy.isPublished,
 
-    startDate: vacancy.startDate,
+  review: serializeReview(vacancy),
 
-    selectionProcess: vacancy.selectionProcess,
+  publication: serializePublication(vacancy),
 
-    // ==================================================
-    // PRIVATE CONTACT
-    //
-    // ADMIN MAY SEE THESE.
-    // SEEKER MUST NEVER RECEIVE THESE.
-    // ==================================================
+  closing: serializeClosing(vacancy),
 
-    contactPerson: vacancy.contactPerson,
+  staffScreening: serializeStaffScreening(vacancy),
 
-    contactPersonKana: vacancy.contactPersonKana,
+  workflowHistory: serializeWorkflowHistory(vacancy),
 
-    contactEmail: vacancy.contactEmail,
+  createdAt: vacancy.createdAt,
 
-    // ==================================================
-    // STAFF SCREENING
-    // ==================================================
+  updatedAt: vacancy.updatedAt,
 
-    staffScreening: serializeStaffScreening(vacancy),
-
-    // ==================================================
-    // ADMIN REVIEW
-    // ==================================================
-
-    status: vacancy.status,
-
-    isPublished: vacancy.isPublished,
-
-    reviewedAt: vacancy.reviewedAt,
-
-    rejectionReason: vacancy.rejectionReason,
-
-    createdAt: vacancy.createdAt,
-
-    updatedAt: vacancy.updatedAt,
-
-    provider: {
-      registerId: provider?.registerId || vacancy.registerId,
-
-      name: provider?.name || null,
-
-      companyName: provider?.companyName || vacancy.companyName,
-
-      email: provider?.email || null,
-    },
-  };
-};
+  provider: serializeProvider(provider, vacancy),
+});
 
 // ======================================================
 // SUMMARY
@@ -314,9 +416,7 @@ const getVacancySummary = async () => {
 };
 
 // ======================================================
-// GET ADMIN VACANCIES
-//
-// GET /api/admin/vacancies
+// GET ALL
 // ======================================================
 
 exports.getAdminVacancies = async (req, res) => {
@@ -337,7 +437,6 @@ exports.getAdminVacancies = async (req, res) => {
         {
           vacancyId: {
             $regex: search,
-
             $options: "i",
           },
         },
@@ -345,7 +444,6 @@ exports.getAdminVacancies = async (req, res) => {
         {
           title: {
             $regex: search,
-
             $options: "i",
           },
         },
@@ -353,7 +451,6 @@ exports.getAdminVacancies = async (req, res) => {
         {
           titleKana: {
             $regex: search,
-
             $options: "i",
           },
         },
@@ -361,7 +458,6 @@ exports.getAdminVacancies = async (req, res) => {
         {
           companyName: {
             $regex: search,
-
             $options: "i",
           },
         },
@@ -369,7 +465,6 @@ exports.getAdminVacancies = async (req, res) => {
         {
           employmentType: {
             $regex: search,
-
             $options: "i",
           },
         },
@@ -377,7 +472,6 @@ exports.getAdminVacancies = async (req, res) => {
         {
           workLocation: {
             $regex: search,
-
             $options: "i",
           },
         },
@@ -423,9 +517,7 @@ exports.getAdminVacancies = async (req, res) => {
 };
 
 // ======================================================
-// GET ONE VACANCY
-//
-// GET /api/admin/vacancies/:vacancyId
+// GET ONE
 // ======================================================
 
 exports.getAdminVacancyById = async (req, res) => {
@@ -451,7 +543,11 @@ exports.getAdminVacancyById = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      data: toVacancyDetails(vacancy, provider),
+      data: toVacancyDetails(
+        vacancy,
+
+        provider,
+      ),
     });
   } catch (error) {
     console.error("GET ADMIN VACANCY DETAILS ERROR:", error);
@@ -468,11 +564,6 @@ exports.getAdminVacancyById = async (req, res) => {
 // APPROVE
 //
 // pending_review -> approved
-//
-// Staff screening is advisory.
-// Admin remains final decision maker.
-//
-// PATCH /api/admin/vacancies/:vacancyId/approve
 // ======================================================
 
 exports.approveAdminVacancy = async (req, res) => {
@@ -499,13 +590,47 @@ exports.approveAdminVacancy = async (req, res) => {
       });
     }
 
+    const actor = getAdminActor(req);
+
+    const now = new Date();
+
+    const fromStatus = vacancy.status;
+
     vacancy.status = "approved";
 
     vacancy.isPublished = false;
 
-    vacancy.reviewedAt = new Date();
+    vacancy.reviewedAt = now;
+
+    vacancy.reviewedByType = "admin";
+
+    vacancy.reviewedById = actor.id;
+
+    vacancy.reviewedByName = actor.name;
 
     vacancy.rejectionReason = null;
+
+    vacancy.publishedAt = null;
+
+    vacancy.publishedByAdminId = null;
+
+    vacancy.publishedByAdminName = null;
+
+    vacancy.closedAt = null;
+
+    vacancy.closedByAdminId = null;
+
+    vacancy.closedByAdminName = null;
+
+    addWorkflowHistory(vacancy, {
+      action: "APPROVED",
+
+      fromStatus,
+
+      toStatus: "approved",
+
+      actor,
+    });
 
     await vacancy.save();
 
@@ -521,9 +646,7 @@ exports.approveAdminVacancy = async (req, res) => {
 
         isPublished: vacancy.isPublished,
 
-        reviewedAt: vacancy.reviewedAt,
-
-        rejectionReason: null,
+        review: serializeReview(vacancy),
       },
     });
   } catch (error) {
@@ -541,8 +664,6 @@ exports.approveAdminVacancy = async (req, res) => {
 // REJECT
 //
 // pending_review -> rejected
-//
-// PATCH /api/admin/vacancies/:vacancyId/reject
 // ======================================================
 
 exports.rejectAdminVacancy = async (req, res) => {
@@ -588,13 +709,49 @@ exports.rejectAdminVacancy = async (req, res) => {
       });
     }
 
+    const actor = getAdminActor(req);
+
+    const now = new Date();
+
+    const fromStatus = vacancy.status;
+
     vacancy.status = "rejected";
 
     vacancy.isPublished = false;
 
-    vacancy.reviewedAt = new Date();
+    vacancy.reviewedAt = now;
+
+    vacancy.reviewedByType = "admin";
+
+    vacancy.reviewedById = actor.id;
+
+    vacancy.reviewedByName = actor.name;
 
     vacancy.rejectionReason = reason;
+
+    vacancy.publishedAt = null;
+
+    vacancy.publishedByAdminId = null;
+
+    vacancy.publishedByAdminName = null;
+
+    vacancy.closedAt = null;
+
+    vacancy.closedByAdminId = null;
+
+    vacancy.closedByAdminName = null;
+
+    addWorkflowHistory(vacancy, {
+      action: "REJECTED",
+
+      fromStatus,
+
+      toStatus: "rejected",
+
+      actor,
+
+      reason,
+    });
 
     await vacancy.save();
 
@@ -610,9 +767,7 @@ exports.rejectAdminVacancy = async (req, res) => {
 
         isPublished: vacancy.isPublished,
 
-        reviewedAt: vacancy.reviewedAt,
-
-        rejectionReason: vacancy.rejectionReason,
+        review: serializeReview(vacancy),
       },
     });
   } catch (error) {
@@ -630,8 +785,6 @@ exports.rejectAdminVacancy = async (req, res) => {
 // PUBLISH
 //
 // approved -> published
-//
-// PATCH /api/admin/vacancies/:vacancyId/publish
 // ======================================================
 
 exports.publishAdminVacancy = async (req, res) => {
@@ -658,11 +811,39 @@ exports.publishAdminVacancy = async (req, res) => {
       });
     }
 
+    const actor = getAdminActor(req);
+
+    const now = new Date();
+
+    const fromStatus = vacancy.status;
+
     vacancy.status = "published";
 
     vacancy.isPublished = true;
 
     vacancy.rejectionReason = null;
+
+    vacancy.publishedAt = now;
+
+    vacancy.publishedByAdminId = actor.id;
+
+    vacancy.publishedByAdminName = actor.name;
+
+    vacancy.closedAt = null;
+
+    vacancy.closedByAdminId = null;
+
+    vacancy.closedByAdminName = null;
+
+    addWorkflowHistory(vacancy, {
+      action: "PUBLISHED",
+
+      fromStatus,
+
+      toStatus: "published",
+
+      actor,
+    });
 
     await vacancy.save();
 
@@ -677,6 +858,8 @@ exports.publishAdminVacancy = async (req, res) => {
         status: vacancy.status,
 
         isPublished: vacancy.isPublished,
+
+        publication: serializePublication(vacancy),
       },
     });
   } catch (error) {
@@ -694,8 +877,6 @@ exports.publishAdminVacancy = async (req, res) => {
 // CLOSE
 //
 // published -> closed
-//
-// PATCH /api/admin/vacancies/:vacancyId/close
 // ======================================================
 
 exports.closeAdminVacancy = async (req, res) => {
@@ -722,9 +903,31 @@ exports.closeAdminVacancy = async (req, res) => {
       });
     }
 
+    const actor = getAdminActor(req);
+
+    const now = new Date();
+
+    const fromStatus = vacancy.status;
+
     vacancy.status = "closed";
 
     vacancy.isPublished = false;
+
+    vacancy.closedAt = now;
+
+    vacancy.closedByAdminId = actor.id;
+
+    vacancy.closedByAdminName = actor.name;
+
+    addWorkflowHistory(vacancy, {
+      action: "CLOSED",
+
+      fromStatus,
+
+      toStatus: "closed",
+
+      actor,
+    });
 
     await vacancy.save();
 
@@ -739,6 +942,8 @@ exports.closeAdminVacancy = async (req, res) => {
         status: vacancy.status,
 
         isPublished: vacancy.isPublished,
+
+        closing: serializeClosing(vacancy),
       },
     });
   } catch (error) {

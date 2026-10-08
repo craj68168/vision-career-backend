@@ -2,28 +2,39 @@ const Application = require("../../models/applications/applicationSchema");
 
 const Vacancy = require("../../models/providers/vacancySchema");
 
+const Seeker = require("../../models/seekers/seekerSchema");
+
 const {
   sendApplicationResume,
 } = require("../../utils/applicationResumeStorage");
 
+const {
+  sendProviderCandidatePhoto,
+} = require("../../utils/providerCandidatePhotoStorage");
+
 // ======================================================
 // PROVIDER VISIBLE APPLICATION STATUSES
-// ======================================================
 //
 // Provider must NOT see:
 //
-// PENDING_ADMIN_APPROVAL
-// ADMIN_REJECTED
+// - PENDING_ADMIN_APPROVAL
+// - ADMIN_REJECTED
 //
-// Only applications approved by Admin are visible.
+// Only applications approved by Admin / authorized Staff
+// become visible.
 // ======================================================
 
 const PROVIDER_VISIBLE_STATUSES = [
   "SENT_TO_PROVIDER",
+
   "UNDER_REVIEW",
+
   "INTERVIEW",
+
   "SELECTED",
+
   "HIRED",
+
   "REJECTED",
 ];
 
@@ -33,14 +44,53 @@ const PROVIDER_VISIBLE_STATUSES = [
 
 const PROVIDER_UPDATE_STATUSES = [
   "UNDER_REVIEW",
+
   "INTERVIEW",
+
   "SELECTED",
+
   "HIRED",
+
   "REJECTED",
 ];
 
 // ======================================================
-// SAFE VACANCY SUMMARY
+// PROVIDER-SAFE EDUCATION
+// ======================================================
+
+const toProviderEducation = (education) => ({
+  enrollment_date: education?.enrollment_date || null,
+
+  graduation_date: education?.graduation_date || null,
+
+  school_type: education?.school_type || null,
+
+  school: education?.school || null,
+
+  major: education?.major || null,
+});
+
+// ======================================================
+// PROVIDER-SAFE EMPLOYMENT
+// ======================================================
+
+const toProviderEmployment = (employment) => ({
+  start_date: employment?.start_date || null,
+
+  end_date: employment?.end_date || null,
+
+  employment_type: employment?.employment_type || null,
+
+  company_name: employment?.company_name || null,
+});
+
+// ======================================================
+// PROVIDER'S OWN VACANCY SUMMARY
+//
+// Provider may see its own company information.
+// This privacy rule applies in the opposite direction:
+//
+// Job Seeker must not see real Provider/company identity.
 // ======================================================
 
 const toProviderVacancySummary = (vacancy) => {
@@ -77,25 +127,44 @@ const toProviderVacancySummary = (vacancy) => {
 
 // ======================================================
 // SAFE PROVIDER APPLICATION RESPONSE
-// ======================================================
 //
-// Provider may see:
+// Provider MAY receive:
 //
-// Candidate professional snapshot
-// Application-specific professional resume
+// - candidate name
+// - photo availability
+// - nationality
+// - visa
+// - Japanese level
+// - skills
+// - desired job/location
+// - education
+// - employment history
+// - professional resume
 //
-// Provider does NOT receive:
+// Provider MUST NOT receive:
 //
-// seeker_id
-// email
-// phone
-// address
-// private documents
-// raw Supabase path
+// - seeker_id
+// - email
+// - phone
+// - home address
+// - exact current location
+// - direct contact information
+// - raw profile_photo storage reference
+// - raw resume storage reference
+// - private documents
+//
+// IMPORTANT:
+//
+// photo_available is only a Boolean.
+//
+// Never return:
+// seeker.profile_photo
 // ======================================================
 
-const toProviderApplication = (application, vacancy) => {
+const toProviderApplication = (application, vacancy, seeker) => {
   const data = application.toObject ? application.toObject() : application;
+
+  const snapshot = data.profile_snapshot || {};
 
   return {
     application_id: data.application_id,
@@ -110,32 +179,100 @@ const toProviderApplication = (application, vacancy) => {
 
     updated_at: data.updated_at,
 
-    resume_available: Boolean(data.profile_snapshot?.generated_resume_file),
+    resume_available: Boolean(snapshot.generated_resume_file),
 
     applicant: {
-      name: data.profile_snapshot?.name || null,
+      name: snapshot.name || seeker?.name || null,
 
-      nationality: data.profile_snapshot?.nationality || null,
+      // =================================================
+      // PHOTO
+      //
+      // Provider receives only availability.
+      //
+      // Actual image must be requested through:
+      //
+      // /api/providers/applications/:applicationId/photo
+      //
+      // =================================================
 
-      visa_type: data.profile_snapshot?.visa_type || null,
+      photo_available: Boolean(seeker?.profile_photo),
 
-      visa_expiry_date: data.profile_snapshot?.visa_expiry_date || null,
+      nationality: snapshot.nationality || seeker?.nationality || null,
 
-      japanese_level: data.profile_snapshot?.japanese_level || null,
+      visa_type: snapshot.visa_type || seeker?.visa_type || null,
 
-      skills: data.profile_snapshot?.skills || [],
+      visa_expiry_date:
+        snapshot.visa_expiry_date || seeker?.visa_expiry_date || null,
 
-      desired_job: data.profile_snapshot?.desired_job || null,
+      japanese_level: snapshot.japanese_level || seeker?.japanese_level || null,
 
-      desired_location: data.profile_snapshot?.desired_location || null,
+      skills:
+        Array.isArray(snapshot.skills) && snapshot.skills.length > 0
+          ? snapshot.skills
+          : Array.isArray(seeker?.skills)
+            ? seeker.skills
+            : [],
 
-      education: data.profile_snapshot?.education || [],
+      desired_job: snapshot.desired_job || seeker?.desired_job || null,
 
-      employment_history: data.profile_snapshot?.employment_history || [],
+      desired_location:
+        snapshot.desired_location || seeker?.desired_location || null,
+
+      education: Array.isArray(snapshot.education)
+        ? snapshot.education.map(toProviderEducation)
+        : [],
+
+      employment_history: Array.isArray(snapshot.employment_history)
+        ? snapshot.employment_history.map(toProviderEmployment)
+        : [],
     },
 
     vacancy: toProviderVacancySummary(vacancy),
   };
+};
+
+// ======================================================
+// LOAD RELATED SEEKERS
+//
+// Used ONLY internally.
+//
+// seeker IDs and private profile photo storage references
+// are never returned to Provider.
+// ======================================================
+
+const loadSeekerMap = async (applications) => {
+  const seekerIds = [
+    ...new Set(
+      applications.map((application) => application.seeker_id).filter(Boolean),
+    ),
+  ];
+
+  if (seekerIds.length === 0) {
+    return new Map();
+  }
+
+  const seekers = await Seeker.find({
+    seeker_id: {
+      $in: seekerIds,
+    },
+  })
+    .select(
+      [
+        "seeker_id",
+        "name",
+        "profile_photo",
+        "nationality",
+        "visa_type",
+        "visa_expiry_date",
+        "japanese_level",
+        "skills",
+        "desired_job",
+        "desired_location",
+      ].join(" "),
+    )
+    .lean();
+
+  return new Map(seekers.map((seeker) => [seeker.seeker_id, seeker]));
 };
 
 // ======================================================
@@ -180,6 +317,10 @@ exports.getProviderApplications = async (req, res) => {
       applied_at: -1,
     });
 
+    // ==================================================
+    // VACANCIES
+    // ==================================================
+
     const vacancyIds = [
       ...new Set(applications.map((application) => application.vacancy_id)),
     ];
@@ -199,11 +340,21 @@ exports.getProviderApplications = async (req, res) => {
       vacancies.map((vacancy) => [vacancy.vacancyId, vacancy]),
     );
 
+    // ==================================================
+    // SEEKERS
+    //
+    // Used internally for profile photo availability.
+    // ==================================================
+
+    const seekerMap = await loadSeekerMap(applications);
+
     const data = applications.map((application) =>
       toProviderApplication(
         application,
 
         vacancyMap.get(application.vacancy_id),
+
+        seekerMap.get(application.seeker_id),
       ),
     );
 
@@ -261,11 +412,32 @@ exports.getProviderApplicationById = async (req, res) => {
       });
     }
 
-    const vacancy = await Vacancy.findOne({
-      vacancyId: application.vacancy_id,
+    const [vacancy, seeker] = await Promise.all([
+      Vacancy.findOne({
+        vacancyId: application.vacancy_id,
 
-      registerId,
-    });
+        registerId,
+      }),
+
+      Seeker.findOne({
+        seeker_id: application.seeker_id,
+      })
+        .select(
+          [
+            "seeker_id",
+            "name",
+            "profile_photo",
+            "nationality",
+            "visa_type",
+            "visa_expiry_date",
+            "japanese_level",
+            "skills",
+            "desired_job",
+            "desired_location",
+          ].join(" "),
+        )
+        .lean(),
+    ]);
 
     return res.status(200).json({
       status: "success",
@@ -274,6 +446,8 @@ exports.getProviderApplicationById = async (req, res) => {
         application,
 
         vacancy,
+
+        seeker,
       ),
     });
   } catch (error) {
@@ -288,13 +462,131 @@ exports.getProviderApplicationById = async (req, res) => {
 };
 
 // ======================================================
+// GET PROVIDER CANDIDATE PHOTO
+//
+// GET:
+//
+// /api/providers/applications/:applicationId/photo
+//
+// SECURITY FLOW:
+//
+// Provider authentication
+//        ↓
+// Application belongs to Provider
+//        ↓
+// Application must already be approved
+//        ↓
+// Get internal seeker_id
+//        ↓
+// Load private profile_photo
+//        ↓
+// Validate storage prefix
+//        ↓
+// Stream image
+//
+// NEVER returns:
+//
+// - seekerId
+// - storage URL
+// - storage key
+// ======================================================
+
+exports.getProviderApplicationPhoto = async (req, res) => {
+  try {
+    const registerId = req.registerId;
+
+    const { applicationId } = req.params;
+
+    if (!registerId) {
+      return res.status(401).json({
+        status: "error",
+
+        message: "Provider authentication required.",
+      });
+    }
+
+    // ==================================================
+    // APPLICATION OWNERSHIP + APPROVAL
+    // ==================================================
+
+    const application = await Application.findOne({
+      application_id: applicationId,
+
+      provider_id: registerId,
+
+      status: {
+        $in: PROVIDER_VISIBLE_STATUSES,
+      },
+    })
+      .select("application_id seeker_id")
+      .lean();
+
+    if (!application) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Application not found.",
+      });
+    }
+
+    // ==================================================
+    // SEEKER PHOTO
+    //
+    // Internal seeker ID is used only on backend.
+    // ==================================================
+
+    const seeker = await Seeker.findOne({
+      seeker_id: application.seeker_id,
+    })
+      .select("seeker_id profile_photo")
+      .lean();
+
+    if (!seeker || !seeker.profile_photo) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Candidate photo is not available.",
+      });
+    }
+
+    // ==================================================
+    // PRIVATE STREAM
+    // ==================================================
+
+    await sendProviderCandidatePhoto({
+      res,
+
+      storedPath: seeker.profile_photo,
+
+      seekerId: seeker.seeker_id,
+    });
+
+    return undefined;
+  } catch (error) {
+    console.error("Provider candidate photo error:", error);
+
+    if (res.headersSent) {
+      return undefined;
+    }
+
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
+
+    return res.status(statusCode).json({
+      status: "error",
+
+      message:
+        statusCode === 404
+          ? "Candidate photo not found."
+          : statusCode === 403
+            ? "Candidate photo access denied."
+            : "Failed to load candidate photo.",
+    });
+  }
+};
+
+// ======================================================
 // GET APPLICATION FROZEN RESUME
-//
-// Provider can only access:
-//
-// application belonging to this Provider
-// application already approved by Admin
-// frozen application-specific resume
 // ======================================================
 
 exports.getProviderApplicationResume = async (req, res) => {
@@ -437,11 +729,32 @@ exports.updateProviderApplicationStatus = async (req, res) => {
 
     await application.save();
 
-    const vacancy = await Vacancy.findOne({
-      vacancyId: application.vacancy_id,
+    const [vacancy, seeker] = await Promise.all([
+      Vacancy.findOne({
+        vacancyId: application.vacancy_id,
 
-      registerId,
-    });
+        registerId,
+      }),
+
+      Seeker.findOne({
+        seeker_id: application.seeker_id,
+      })
+        .select(
+          [
+            "seeker_id",
+            "name",
+            "profile_photo",
+            "nationality",
+            "visa_type",
+            "visa_expiry_date",
+            "japanese_level",
+            "skills",
+            "desired_job",
+            "desired_location",
+          ].join(" "),
+        )
+        .lean(),
+    ]);
 
     return res.status(200).json({
       status: "success",
@@ -452,6 +765,8 @@ exports.updateProviderApplicationStatus = async (req, res) => {
         application,
 
         vacancy,
+
+        seeker,
       ),
     });
   } catch (error) {

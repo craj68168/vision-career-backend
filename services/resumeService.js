@@ -5,22 +5,6 @@ const path = require("path");
 // ======================================================
 // FOLDERS
 // ======================================================
-//
-// GENERATED_RESUME_DIR
-// --------------------
-// Kept unchanged for the existing profile-generated
-// resume feature. We are NOT migrating that feature yet.
-//
-// APPLICATION_RESUME_DIR
-// ----------------------
-// Kept only for backward compatibility with older
-// application records that still contain:
-//
-// application-resumes/APP-XXXXXXXX.pdf
-//
-// New application resumes are generated in memory and
-// uploaded to Supabase by applicationController.
-// ======================================================
 
 const GENERATED_RESUME_DIR = path.join(
   __dirname,
@@ -39,6 +23,48 @@ fs.mkdirSync(GENERATED_RESUME_DIR, {
 fs.mkdirSync(APPLICATION_RESUME_DIR, {
   recursive: true,
 });
+
+// ======================================================
+// RESUME AUDIENCES
+//
+// internal
+// --------
+// Professional resume used by:
+//
+// - Job Seeker
+// - Admin
+// - authorized Staff
+//
+// provider
+// --------
+// Provider-facing professional resume.
+//
+// Provider MAY see:
+//
+// - candidate name
+// - nationality
+// - visa information
+// - Japanese level
+// - desired job/location
+// - skills
+// - education, including school
+// - employment experience, including previous company
+//
+// Provider MUST NOT receive:
+//
+// - email
+// - phone
+// - full/home address
+// - exact current location
+// - personal contact information
+// - private documents
+// ======================================================
+
+const RESUME_AUDIENCES = {
+  INTERNAL: "internal",
+
+  PROVIDER: "provider",
+};
 
 // ======================================================
 // HELPERS
@@ -63,6 +89,7 @@ const setRegularFont = (doc) => {
 
   if (customFont && fs.existsSync(customFont)) {
     doc.font(customFont);
+
     return;
   }
 
@@ -74,6 +101,7 @@ const setBoldFont = (doc) => {
 
   if (customBoldFont && fs.existsSync(customBoldFont)) {
     doc.font(customBoldFont);
+
     return;
   }
 
@@ -119,18 +147,83 @@ const createPdfDocument = () => {
 
     margins: {
       top: 50,
+
       bottom: 50,
+
       left: 55,
+
       right: 55,
     },
   });
 };
 
 // ======================================================
-// WRITE RESUME CONTENT
+// BUILD PROVIDER-SAFE PROFESSIONAL DATA
+//
+// Explicitly select only fields Provider is allowed to
+// receive.
+//
+// Do NOT copy the complete Seeker object.
 // ======================================================
 
-const writeResumeContent = (doc, seeker) => {
+const buildProviderProfessionalCandidate = (seeker) => ({
+  name: seeker.name || null,
+
+  nationality: seeker.nationality || null,
+
+  visa_type: seeker.visa_type || null,
+
+  visa_expiry_date: seeker.visa_expiry_date || null,
+
+  japanese_level: seeker.japanese_level || null,
+
+  desired_job: seeker.desired_job || null,
+
+  desired_location: seeker.desired_location || null,
+
+  skills: Array.isArray(seeker.skills) ? seeker.skills : [],
+
+  education: Array.isArray(seeker.education)
+    ? seeker.education.map((education) => ({
+        enrollment_date: education.enrollment_date || null,
+
+        graduation_date: education.graduation_date || null,
+
+        school_type: education.school_type || null,
+
+        school: education.school || null,
+
+        major: education.major || null,
+      }))
+    : [],
+
+  employment_history: Array.isArray(seeker.employment_history)
+    ? seeker.employment_history.map((employment) => ({
+        start_date: employment.start_date || null,
+
+        end_date: employment.end_date || null,
+
+        employment_type: employment.employment_type || null,
+
+        company_name: employment.company_name || null,
+      }))
+    : [],
+});
+
+// ======================================================
+// WRITE INTERNAL PROFESSIONAL RESUME
+//
+// Job Seeker / Admin / authorized Staff.
+//
+// This remains a professional resume only.
+// It does not include:
+//
+// - email
+// - phone
+// - full address
+// ======================================================
+
+const writeInternalResumeContent = (doc, seeker) => {
   // --------------------------------------------------
   // TITLE
   // --------------------------------------------------
@@ -187,6 +280,8 @@ const writeResumeContent = (doc, seeker) => {
 
       setRegularFont(doc);
 
+      doc.fontSize(10).text(`School Type: ${education.school_type || "-"}`);
+
       doc.fontSize(10).text(`Major: ${education.major || "-"}`);
 
       doc
@@ -237,13 +332,172 @@ const writeResumeContent = (doc, seeker) => {
 };
 
 // ======================================================
-// GENERATE PDF BUFFER
+// WRITE PROVIDER PROFESSIONAL RESUME
 //
-// Used for application-specific frozen resumes.
-// Nothing is written to local disk.
+// Provider may see Candidate Name and professional
+// information.
+//
+// Direct contact information remains excluded.
 // ======================================================
 
-const generateResumeBuffer = async (seeker) => {
+const writeProviderResumeContent = (doc, seeker) => {
+  const candidate = buildProviderProfessionalCandidate(seeker);
+
+  // --------------------------------------------------
+  // TITLE
+  // --------------------------------------------------
+
+  setBoldFont(doc);
+
+  doc.fontSize(22).text("Professional Resume", {
+    align: "center",
+  });
+
+  doc.moveDown(0.5);
+
+  setRegularFont(doc);
+
+  doc
+    .fontSize(9)
+    .text(
+      "Candidate professional information provided through Vision Career.",
+      {
+        align: "center",
+      },
+    );
+
+  doc.moveDown();
+
+  // --------------------------------------------------
+  // PROFESSIONAL INFORMATION
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Professional Information");
+
+  addLabelValue(doc, "Name", candidate.name);
+
+  addLabelValue(doc, "Nationality", candidate.nationality);
+
+  addLabelValue(doc, "Visa Type", candidate.visa_type);
+
+  addLabelValue(doc, "Visa Expiry", formatDate(candidate.visa_expiry_date));
+
+  addLabelValue(doc, "Japanese Level", candidate.japanese_level);
+
+  addLabelValue(doc, "Desired Job", candidate.desired_job);
+
+  addLabelValue(doc, "Desired Location", candidate.desired_location);
+
+  // --------------------------------------------------
+  // SKILLS
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Skills");
+
+  setRegularFont(doc);
+
+  doc
+    .fontSize(10)
+    .text(candidate.skills.length ? candidate.skills.join(", ") : "-");
+
+  // --------------------------------------------------
+  // EDUCATION
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Education");
+
+  if (candidate.education.length) {
+    candidate.education.forEach((education) => {
+      setBoldFont(doc);
+
+      doc.fontSize(11).text(education.school || "-");
+
+      setRegularFont(doc);
+
+      doc.fontSize(10).text(`School Type: ${education.school_type || "-"}`);
+
+      doc.fontSize(10).text(`Major: ${education.major || "-"}`);
+
+      doc
+        .fontSize(10)
+        .text(
+          `${formatDate(education.enrollment_date)} - ${formatDate(
+            education.graduation_date,
+          )}`,
+        );
+
+      doc.moveDown(0.7);
+    });
+  } else {
+    doc.text("-");
+  }
+
+  // --------------------------------------------------
+  // EMPLOYMENT HISTORY
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Employment History");
+
+  if (candidate.employment_history.length) {
+    candidate.employment_history.forEach((employment) => {
+      setBoldFont(doc);
+
+      doc.fontSize(11).text(employment.company_name || "-");
+
+      setRegularFont(doc);
+
+      doc
+        .fontSize(10)
+        .text(`Employment Type: ${employment.employment_type || "-"}`);
+
+      const endDate = employment.end_date
+        ? formatDate(employment.end_date)
+        : "Present";
+
+      doc
+        .fontSize(10)
+        .text(`${formatDate(employment.start_date)} - ${endDate}`);
+
+      doc.moveDown(0.7);
+    });
+  } else {
+    doc.text("-");
+  }
+
+  // --------------------------------------------------
+  // COMMUNICATION NOTICE
+  // --------------------------------------------------
+
+  addSectionTitle(doc, "Communication Notice");
+
+  doc
+    .fontSize(9)
+    .text(
+      "Phone number, email address, full address, and other direct contact information are intentionally excluded. Please coordinate communication through Vision Career.",
+    );
+};
+
+// ======================================================
+// WRITE RESUME CONTENT BY AUDIENCE
+// ======================================================
+
+const writeResumeContent = (doc, seeker, options = {}) => {
+  const { audience = RESUME_AUDIENCES.INTERNAL } = options;
+
+  if (audience === RESUME_AUDIENCES.PROVIDER) {
+    writeProviderResumeContent(doc, seeker);
+
+    return;
+  }
+
+  writeInternalResumeContent(doc, seeker);
+};
+
+// ======================================================
+// GENERATE PDF BUFFER
+// ======================================================
+
+const generateResumeBuffer = async (seeker, options = {}) => {
   return new Promise((resolve, reject) => {
     const doc = createPdfDocument();
 
@@ -260,7 +514,7 @@ const generateResumeBuffer = async (seeker) => {
     doc.on("error", reject);
 
     try {
-      writeResumeContent(doc, seeker);
+      writeResumeContent(doc, seeker, options);
 
       doc.end();
     } catch (error) {
@@ -272,8 +526,7 @@ const generateResumeBuffer = async (seeker) => {
 // ======================================================
 // GENERATE LOCAL PROFILE RESUME
 //
-// Existing behavior is intentionally preserved until the
-// generated-profile-resume feature is reviewed separately.
+// Existing profile-generated resume remains internal.
 // ======================================================
 
 const generateLocalProfileResume = async (seeker) => {
@@ -289,13 +542,15 @@ const generateLocalProfileResume = async (seeker) => {
     const stream = fs.createWriteStream(absolutePath);
 
     stream.on("finish", resolve);
+
     stream.on("error", reject);
+
     doc.on("error", reject);
 
     doc.pipe(stream);
 
     try {
-      writeResumeContent(doc, seeker);
+      writeInternalResumeContent(doc, seeker);
 
       doc.end();
     } catch (error) {
@@ -317,14 +572,16 @@ const generateLocalProfileResume = async (seeker) => {
 // ======================================================
 
 const generateResumePdf = async (seeker, options = {}) => {
-  const { type = "profile", applicationId = null } = options;
+  const {
+    type = "profile",
+
+    applicationId = null,
+
+    audience = RESUME_AUDIENCES.INTERNAL,
+  } = options;
 
   // ====================================================
   // APPLICATION RESUME
-  //
-  // Generate completely in memory.
-  // applicationController uploads the returned buffer to
-  // Supabase private storage.
   // ====================================================
 
   if (type === "application") {
@@ -332,9 +589,15 @@ const generateResumePdf = async (seeker, options = {}) => {
       throw new Error("applicationId is required for application resume.");
     }
 
-    const fileName = `${applicationId}.pdf`;
+    const providerSafe = audience === RESUME_AUDIENCES.PROVIDER;
 
-    const buffer = await generateResumeBuffer(seeker);
+    const fileName = providerSafe
+      ? `${applicationId}-provider.pdf`
+      : `${applicationId}.pdf`;
+
+    const buffer = await generateResumeBuffer(seeker, {
+      audience,
+    });
 
     return {
       fileName,
@@ -358,6 +621,12 @@ const generateResumePdf = async (seeker, options = {}) => {
 
 module.exports = {
   generateResumePdf,
+
+  generateResumeBuffer,
+
+  RESUME_AUDIENCES,
+
   GENERATED_RESUME_DIR,
+
   APPLICATION_RESUME_DIR,
 };

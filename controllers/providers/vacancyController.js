@@ -4,6 +4,41 @@ const Register = require("../../models/providers/registerSchema");
 
 const Counter = require("../../models/providers/counterModel");
 
+const {
+  SEEKER_EMPLOYER_LABEL,
+  toSeekerVisibleWorkLocation,
+} = require("../../utils/seekerPrivacy");
+
+// ======================================================
+// PROVIDER EDITABLE STATUSES
+//
+// Provider may edit:
+//
+// draft
+// pending_review
+// rejected
+//
+// Provider may NOT edit:
+//
+// approved
+// published
+// closed
+//
+// Once a vacancy has been approved, the approved version
+// must remain frozen.
+// ======================================================
+
+const PROVIDER_EDITABLE_STATUSES = ["draft", "pending_review", "rejected"];
+
+// ======================================================
+// PROVIDER DELETABLE STATUSES
+//
+// Keep approved/published/closed records for workflow
+// history and audit purposes.
+// ======================================================
+
+const PROVIDER_DELETABLE_STATUSES = ["draft", "pending_review", "rejected"];
+
 // ======================================================
 // GENERATE VACANCY ID
 // ======================================================
@@ -13,15 +48,14 @@ const generateVacancyId = async () => {
     {
       _id: "vacancyId",
     },
-
     {
       $inc: {
         seq: 1,
       },
     },
-
     {
       returnDocument: "after",
+
       upsert: true,
     },
   );
@@ -31,6 +65,19 @@ const generateVacancyId = async () => {
 
 // ======================================================
 // ALLOWED PROVIDER FIELDS
+//
+// Provider can only modify these vacancy fields.
+//
+// Workflow fields are intentionally excluded:
+//
+// status
+// isPublished
+// reviewedAt
+// reviewedBy...
+// publishedAt
+// closedAt
+// staff screening
+// workflow history
 // ======================================================
 
 const VACANCY_FIELDS = [
@@ -78,7 +125,7 @@ const VACANCY_FIELDS = [
 ];
 
 // ======================================================
-// CLEAN PAYLOAD
+// CLEAN PROVIDER PAYLOAD
 // ======================================================
 
 const buildVacancyPayload = (body) => {
@@ -94,19 +141,28 @@ const buildVacancyPayload = (body) => {
 };
 
 // ======================================================
-// PUBLIC SEEKER FORMAT
+// PUBLIC / SEEKER-SAFE VACANCY
 //
 // IMPORTANT:
-// NO email
-// NO contact person
-// NO private company contact details
-// NO registerId
+//
+// NEVER expose:
+//
+// - real company name
+// - Provider registerId
+// - contact person
+// - contact email
+// - company phone
+// - company website
+// - exact location
+// - workLocationDetail
+//
+// Only broad prefecture-level location is returned.
 // ======================================================
 
 const toPublicVacancy = (vacancy) => ({
   vacancyId: vacancy.vacancyId,
 
-  companyName: vacancy.companyName,
+  companyName: SEEKER_EMPLOYER_LABEL,
 
   title: vacancy.title,
 
@@ -130,13 +186,7 @@ const toPublicVacancy = (vacancy) => ({
 
   japaneseLevel: vacancy.japaneseLevel,
 
-  workLocation: vacancy.workLocation,
-
-  /*
-   * If workLocationDetail contains
-   * exact/private location information,
-   * don't expose it to seekers.
-   */
+  workLocation: toSeekerVisibleWorkLocation(vacancy.workLocation),
 
   remoteWork: vacancy.remoteWork,
 
@@ -176,8 +226,98 @@ const toPublicVacancy = (vacancy) => ({
 });
 
 // ======================================================
-// CREATE
-// POST /api/providers/vacancies
+// TODAY START UTC
+// ======================================================
+
+const getTodayStartUTC = () => {
+  const today = new Date();
+
+  today.setUTCHours(0, 0, 0, 0);
+
+  return today;
+};
+
+// ======================================================
+// RESET CURRENT REVIEW STATE
+//
+// Used when Provider edits/resubmits:
+//
+// draft
+// pending_review
+// rejected
+//
+// IMPORTANT:
+//
+// workflow_history is NOT deleted.
+//
+// Historical decisions remain available to Admin/Staff.
+// Only the CURRENT review state is reset.
+// ======================================================
+
+const resetReviewStateForResubmission = (vacancy) => {
+  // ====================================================
+  // REVIEW
+  // ====================================================
+
+  vacancy.reviewedAt = null;
+
+  vacancy.reviewedByType = null;
+
+  vacancy.reviewedById = null;
+
+  vacancy.reviewedByName = null;
+
+  vacancy.rejectionReason = null;
+
+  // ====================================================
+  // STAFF SCREENING
+  //
+  // Any Provider edit invalidates the previous screening,
+  // because Staff screened the previous version.
+  // ====================================================
+
+  vacancy.staff_screening_status = "NOT_SCREENED";
+
+  vacancy.staff_screening_note = null;
+
+  vacancy.screened_by_staff_id = null;
+
+  vacancy.screened_by_staff_name = null;
+
+  vacancy.screened_at = null;
+
+  // ====================================================
+  // PUBLICATION
+  // ====================================================
+
+  vacancy.publishedAt = null;
+
+  vacancy.publishedByAdminId = null;
+
+  vacancy.publishedByAdminName = null;
+
+  // ====================================================
+  // CLOSING
+  // ====================================================
+
+  vacancy.closedAt = null;
+
+  vacancy.closedByAdminId = null;
+
+  vacancy.closedByAdminName = null;
+};
+
+// ======================================================
+// CREATE VACANCY
+//
+// POST
+// /api/providers/vacancies
+//
+// New vacancy always goes:
+//
+// pending_review
+//
+// Provider cannot choose its own status.
 // ======================================================
 
 exports.createVacancy = async (req, res) => {
@@ -239,8 +379,8 @@ exports.createVacancy = async (req, res) => {
 
       registerId,
 
-      // Always use authenticated
-      // registered company.
+      // Always use the authenticated
+      // Provider's registered company.
       companyName: register.companyName,
 
       status: "pending_review",
@@ -251,7 +391,7 @@ exports.createVacancy = async (req, res) => {
     return res.status(201).json({
       status: "success",
 
-      message: "Vacancy submitted successfully and is pending admin review.",
+      message: "Vacancy submitted successfully and is pending review.",
 
       data: vacancy,
     });
@@ -271,8 +411,12 @@ exports.createVacancy = async (req, res) => {
 };
 
 // ======================================================
-// PROVIDER LIST
-// GET /api/providers/vacancies
+// GET PROVIDER VACANCIES
+//
+// GET
+// /api/providers/vacancies
+//
+// Provider only gets their own vacancies.
 // ======================================================
 
 exports.getAllVacancies = async (req, res) => {
@@ -293,6 +437,8 @@ exports.getAllVacancies = async (req, res) => {
       data,
     });
   } catch (error) {
+    console.error("GET PROVIDER VACANCIES ERROR:", error);
+
     return res.status(500).json({
       status: "error",
 
@@ -302,15 +448,11 @@ exports.getAllVacancies = async (req, res) => {
 };
 
 // ======================================================
-// PUBLIC SEEKER LIST
-// GET /api/providers/vacancies/public
+// PUBLIC VACANCIES
+//
+// GET
+// /api/providers/vacancies/public
 // ======================================================
-
-const getTodayStartUTC = () => {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  return today;
-};
 
 exports.getPublicVacancies = async (req, res) => {
   try {
@@ -322,8 +464,15 @@ exports.getPublicVacancies = async (req, res) => {
       isPublished: true,
 
       $or: [
-        { applicationDeadline: null },
-        { applicationDeadline: { $gte: todayStart } },
+        {
+          applicationDeadline: null,
+        },
+
+        {
+          applicationDeadline: {
+            $gte: todayStart,
+          },
+        },
       ],
     }).sort({
       createdAt: -1,
@@ -337,6 +486,8 @@ exports.getPublicVacancies = async (req, res) => {
       data: data.map(toPublicVacancy),
     });
   } catch (error) {
+    console.error("GET PUBLIC VACANCIES ERROR:", error);
+
     return res.status(500).json({
       status: "error",
 
@@ -345,43 +496,68 @@ exports.getPublicVacancies = async (req, res) => {
   }
 };
 
+// ======================================================
+// PUBLIC VACANCY DETAILS
+//
+// GET
+// /api/providers/vacancies/public/:id
+// ======================================================
+
 exports.getPublicVacancyById = async (req, res) => {
   try {
     const todayStart = getTodayStartUTC();
 
     const vacancy = await Vacancy.findOne({
       vacancyId: req.params.id,
+
       status: "published",
+
       isPublished: true,
+
       $or: [
-        { applicationDeadline: null },
-        { applicationDeadline: { $gte: todayStart } },
+        {
+          applicationDeadline: null,
+        },
+
+        {
+          applicationDeadline: {
+            $gte: todayStart,
+          },
+        },
       ],
     });
 
     if (!vacancy) {
       return res.status(404).json({
         status: "error",
+
         message: "Vacancy not found",
       });
     }
 
     return res.json({
       status: "success",
+
       data: toPublicVacancy(vacancy),
     });
   } catch (error) {
-    console.error("Get public vacancy error:", error);
+    console.error("GET PUBLIC VACANCY ERROR:", error);
 
     return res.status(500).json({
       status: "error",
+
       message: "Failed to load vacancy",
     });
   }
 };
 
 // ======================================================
-// PROVIDER SINGLE
+// GET PROVIDER VACANCY
+//
+// GET
+// /api/providers/vacancies/:id
+//
+// Provider can only access their own vacancy.
 // ======================================================
 
 exports.getVacancyById = async (req, res) => {
@@ -406,6 +582,8 @@ exports.getVacancyById = async (req, res) => {
       data: vacancy,
     });
   } catch (error) {
+    console.error("GET PROVIDER VACANCY ERROR:", error);
+
     return res.status(500).json({
       status: "error",
 
@@ -415,70 +593,39 @@ exports.getVacancyById = async (req, res) => {
 };
 
 // ======================================================
-// PROVIDER UPDATE
+// UPDATE / RESUBMIT VACANCY
+//
+// PUT
+// /api/providers/vacancies/:id
+//
+// EDITABLE:
+//
+// draft
+// pending_review
+// rejected
+//
+// LOCKED:
+//
+// approved
+// published
+// closed
+//
+// Any allowed edit becomes:
+//
+// pending_review
+//
+// because Admin/Staff must review the modified version.
 // ======================================================
 
 exports.updateVacancy = async (req, res) => {
   try {
-    const payload = buildVacancyPayload(req.body);
+    // ==================================================
+    // FIND OWN VACANCY FIRST
+    //
+    // We must check the existing status BEFORE updating.
+    // ==================================================
 
-    /*
-     * Editing a vacancy should
-     * send it back for review.
-     */
-
-    payload.status = "pending_review";
-
-    payload.isPublished = false;
-
-    const vacancy = await Vacancy.findOneAndUpdate(
-      {
-        vacancyId: req.params.id,
-
-        registerId: req.registerId,
-      },
-
-      {
-        $set: payload,
-      },
-
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
-
-    if (!vacancy) {
-      return res.status(404).json({
-        status: "error",
-
-        message: "Vacancy not found",
-      });
-    }
-
-    return res.json({
-      status: "success",
-
-      message: "Vacancy updated and submitted for review.",
-
-      data: vacancy,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      status: "error",
-
-      message: "Failed to update vacancy",
-    });
-  }
-};
-
-// ======================================================
-// PROVIDER DELETE
-// ======================================================
-
-exports.deleteVacancy = async (req, res) => {
-  try {
-    const vacancy = await Vacancy.findOneAndDelete({
+    const vacancy = await Vacancy.findOne({
       vacancyId: req.params.id,
 
       registerId: req.registerId,
@@ -492,165 +639,162 @@ exports.deleteVacancy = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // LOCK APPROVED / PUBLISHED / CLOSED
+    // ==================================================
+
+    if (!PROVIDER_EDITABLE_STATUSES.includes(vacancy.status)) {
+      return res.status(409).json({
+        status: "error",
+
+        code: "VACANCY_EDIT_LOCKED",
+
+        message:
+          "This vacancy can no longer be edited. Please contact Vision Career if changes are required.",
+
+        data: {
+          vacancyId: vacancy.vacancyId,
+
+          status: vacancy.status,
+
+          editable: false,
+        },
+      });
+    }
+
+    // ==================================================
+    // BUILD ALLOWED UPDATE
+    // ==================================================
+
+    const payload = buildVacancyPayload(req.body);
+
+    Object.entries(payload).forEach(([field, value]) => {
+      vacancy[field] = value;
+    });
+
+    // ==================================================
+    // RESUBMIT
+    //
+    // Even if the vacancy was rejected or was already
+    // pending review, an edit creates a fresh review
+    // requirement.
+    // ==================================================
+
+    vacancy.status = "pending_review";
+
+    vacancy.isPublished = false;
+
+    // ==================================================
+    // RESET CURRENT REVIEW STATE
+    //
+    // Historical workflow_history remains untouched.
+    // ==================================================
+
+    resetReviewStateForResubmission(vacancy);
+
+    await vacancy.save();
+
     return res.json({
       status: "success",
 
-      message: "Vacancy deleted",
+      message: "Vacancy updated and submitted for review.",
+
+      data: vacancy,
+    });
+  } catch (error) {
+    console.error("UPDATE PROVIDER VACANCY ERROR:", error);
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        status: "error",
+
+        message: "Please check the vacancy information and try again.",
+      });
+    }
+
+    return res.status(500).json({
+      status: "error",
+
+      message: "Failed to update vacancy",
+    });
+  }
+};
+
+// ======================================================
+// DELETE VACANCY
+//
+// DELETE
+// /api/providers/vacancies/:id
+//
+// Provider may delete:
+//
+// draft
+// pending_review
+// rejected
+//
+// Provider may NOT delete:
+//
+// approved
+// published
+// closed
+//
+// Published/approved/closed records should remain in
+// the system for audit/history purposes.
+// ======================================================
+
+exports.deleteVacancy = async (req, res) => {
+  try {
+    const vacancy = await Vacancy.findOne({
+      vacancyId: req.params.id,
+
+      registerId: req.registerId,
+    });
+
+    if (!vacancy) {
+      return res.status(404).json({
+        status: "error",
+
+        message: "Vacancy not found",
+      });
+    }
+
+    if (!PROVIDER_DELETABLE_STATUSES.includes(vacancy.status)) {
+      return res.status(409).json({
+        status: "error",
+
+        code: "VACANCY_DELETE_LOCKED",
+
+        message:
+          "This vacancy can no longer be deleted. Please contact Vision Career if assistance is required.",
+
+        data: {
+          vacancyId: vacancy.vacancyId,
+
+          status: vacancy.status,
+
+          deletable: false,
+        },
+      });
+    }
+
+    await Vacancy.deleteOne({
+      _id: vacancy._id,
+    });
+
+    return res.json({
+      status: "success",
+
+      message: "Vacancy deleted successfully.",
 
       vacancyId: vacancy.vacancyId,
     });
   } catch (error) {
+    console.error("DELETE PROVIDER VACANCY ERROR:", error);
+
     return res.status(500).json({
       status: "error",
 
       message: "Failed to delete vacancy",
     });
   }
-};
-
-// ======================================================
-// APPROVE
-// ======================================================
-
-exports.approveVacancy = async (req, res) => {
-  const vacancy = await Vacancy.findOneAndUpdate(
-    {
-      vacancyId: req.params.id,
-    },
-
-    {
-      status: "approved",
-
-      reviewedAt: new Date(),
-    },
-
-    {
-      new: true,
-    },
-  );
-
-  if (!vacancy) {
-    return res.status(404).json({
-      status: "error",
-
-      message: "Vacancy not found",
-    });
-  }
-
-  return res.json({
-    status: "success",
-    data: vacancy,
-  });
-};
-
-// ======================================================
-// REJECT
-// ======================================================
-
-exports.rejectVacancy = async (req, res) => {
-  const vacancy = await Vacancy.findOneAndUpdate(
-    {
-      vacancyId: req.params.id,
-    },
-
-    {
-      status: "rejected",
-
-      isPublished: false,
-
-      rejectionReason: req.body.rejectionReason || null,
-
-      reviewedAt: new Date(),
-    },
-
-    {
-      new: true,
-    },
-  );
-
-  if (!vacancy) {
-    return res.status(404).json({
-      status: "error",
-
-      message: "Vacancy not found",
-    });
-  }
-
-  return res.json({
-    status: "success",
-    data: vacancy,
-  });
-};
-
-// ======================================================
-// PUBLISH
-// ======================================================
-
-exports.publishVacancy = async (req, res) => {
-  const vacancy = await Vacancy.findOneAndUpdate(
-    {
-      vacancyId: req.params.id,
-    },
-
-    {
-      status: "published",
-
-      isPublished: true,
-    },
-
-    {
-      new: true,
-    },
-  );
-
-  if (!vacancy) {
-    return res.status(404).json({
-      status: "error",
-
-      message: "Vacancy not found",
-    });
-  }
-
-  return res.json({
-    status: "success",
-
-    message: "Published successfully",
-
-    data: toPublicVacancy(vacancy),
-  });
-};
-
-// ======================================================
-// CLOSE
-// ======================================================
-
-exports.closeVacancy = async (req, res) => {
-  const vacancy = await Vacancy.findOneAndUpdate(
-    {
-      vacancyId: req.params.id,
-    },
-
-    {
-      status: "closed",
-
-      isPublished: false,
-    },
-
-    {
-      new: true,
-    },
-  );
-
-  if (!vacancy) {
-    return res.status(404).json({
-      status: "error",
-
-      message: "Vacancy not found",
-    });
-  }
-
-  return res.json({
-    status: "success",
-    data: vacancy,
-  });
 };

@@ -6,6 +6,7 @@ const {
   getProviderApplications,
   getProviderApplicationById,
   getProviderApplicationResume,
+  getProviderApplicationPhoto,
   updateProviderApplicationStatus,
 } = require("../../controllers/providers/applicationController");
 
@@ -14,11 +15,38 @@ const router = express.Router();
 // ======================================================
 // GET ALL APPLICATIONS
 //
-// GET /api/providers/applications
-//
+// GET
+// /api/providers/applications
 // ======================================================
 
 router.get("/", authMiddleware, getProviderApplications);
+
+// ======================================================
+// GET CANDIDATE PHOTO
+//
+// GET
+// /api/providers/applications/:applicationId/photo
+//
+// IMPORTANT:
+//
+// Keep before:
+//
+// /:applicationId
+//
+// Provider can access the photo only when:
+//
+// - authenticated
+// - application belongs to Provider
+// - application has already passed Admin/Staff approval
+// ======================================================
+
+router.get(
+  "/:applicationId/photo",
+
+  authMiddleware,
+
+  getProviderApplicationPhoto,
+);
 
 // ======================================================
 // GET APPLICATION RESUME
@@ -26,13 +54,14 @@ router.get("/", authMiddleware, getProviderApplications);
 // GET
 // /api/providers/applications/:applicationId/resume
 //
-// Keep this before /:applicationId
-//
+// Keep before /:applicationId
 // ======================================================
 
 router.get(
   "/:applicationId/resume",
+
   authMiddleware,
+
   getProviderApplicationResume,
 );
 
@@ -41,12 +70,13 @@ router.get(
 //
 // PATCH
 // /api/providers/applications/:applicationId/status
-//
 // ======================================================
 
 router.patch(
   "/:applicationId/status",
+
   authMiddleware,
+
   updateProviderApplicationStatus,
 );
 
@@ -56,8 +86,15 @@ router.patch(
 // GET
 // /api/providers/applications/:applicationId
 //
+// Keep last.
 // ======================================================
 
-router.get("/:applicationId", authMiddleware, getProviderApplicationById);
+router.get(
+  "/:applicationId",
+
+  authMiddleware,
+
+  getProviderApplicationById,
+);
 
 module.exports = router;

@@ -11,7 +11,108 @@ const {
 } = require("../../utils/syncSeekerPlacementStatus");
 
 // ======================================================
-// SERIALIZER
+// PROVIDER-SAFE CANDIDATE SNAPSHOT
+//
+// REQUIREMENTS:
+//
+// Provider MAY see:
+// - candidate name
+// - education
+// - experience
+// - skills
+// - visa status
+// - Japanese level
+// - other professional profile information
+//
+// Provider MUST NOT receive:
+// - seekerId
+// - email
+// - phone
+// - full/home address
+// - exact current location
+// - private documents
+// - raw internal candidate snapshot
+//
+// Admin / authorized Staff continue using the original
+// stored candidate_snapshot through their own endpoints.
+// ======================================================
+
+const serializeProviderCandidateSnapshot = (candidate) => {
+  const snapshot = candidate.candidate_snapshot || {};
+
+  return {
+    // Candidate name is explicitly Provider-visible.
+    name: snapshot.name || null,
+
+    nationality: snapshot.nationality || null,
+
+    // Exact current location stays private.
+    current_location: null,
+
+    visa_type: snapshot.visa_type || null,
+
+    visa_expiry_date: snapshot.visa_expiry_date || null,
+
+    japanese_level: snapshot.japanese_level || null,
+
+    skills: Array.isArray(snapshot.skills) ? snapshot.skills : [],
+
+    desired_job: snapshot.desired_job || null,
+
+    // Desired location is professional preference data,
+    // not the candidate's home/current address.
+    desired_location: snapshot.desired_location || null,
+
+    // ==================================================
+    // EDUCATION
+    //
+    // Education is professional information and may be
+    // shown to the Provider, including school name.
+    // ==================================================
+
+    education: Array.isArray(snapshot.education)
+      ? snapshot.education.map((education) => ({
+          enrollment_date: education.enrollment_date || null,
+
+          graduation_date: education.graduation_date || null,
+
+          school_type: education.school_type || null,
+
+          school: education.school || null,
+
+          major: education.major || null,
+        }))
+      : [],
+
+    // ==================================================
+    // EMPLOYMENT HISTORY
+    //
+    // Professional employment experience may be shown,
+    // including previous company name.
+    // ==================================================
+
+    employment_history: Array.isArray(snapshot.employment_history)
+      ? snapshot.employment_history.map((employment) => ({
+          start_date: employment.start_date || null,
+
+          end_date: employment.end_date || null,
+
+          employment_type: employment.employment_type || null,
+
+          company_name: employment.company_name || null,
+        }))
+      : [],
+  };
+};
+
+// ======================================================
+// PROVIDER SERIALIZER
+//
+// Never send:
+// - candidate.seekerId
+// - candidate.providerId
+// - raw candidate_snapshot
+// - internal Admin matching information
 // ======================================================
 
 const serializeProviderCandidate = (candidate) => ({
@@ -21,7 +122,7 @@ const serializeProviderCandidate = (candidate) => ({
 
   status: candidate.status,
 
-  candidate: candidate.candidate_snapshot,
+  candidate: serializeProviderCandidateSnapshot(candidate),
 
   matchedAt: candidate.matchedAt,
 
@@ -186,7 +287,18 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // INTERNAL SEEKER ID
+    //
+    // Used internally only.
+    // Never returned to Provider.
+    // ==================================================
+
     const seekerId = candidate.seekerId;
+
+    // ==================================================
+    // CONFIRM PROVIDER OWNS REQUEST
+    // ==================================================
 
     const recruit = await Recruit.findOne({
       recruitId: candidate.recruitId,
@@ -202,6 +314,10 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       });
     }
 
+    // ==================================================
+    // TRANSITION
+    // ==================================================
+
     const nextStatuses = ALLOWED_TRANSITIONS[candidate.status] || [];
 
     if (!nextStatuses.includes(status)) {
@@ -211,6 +327,10 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
         message: `Cannot change candidate status from ${candidate.status} to ${status}.`,
       });
     }
+
+    // ==================================================
+    // REJECT
+    // ==================================================
 
     if (status === "REJECTED") {
       const normalizedReason = String(rejectionReason || "").trim();
@@ -240,6 +360,10 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
       candidate.rejectedAt = null;
     }
 
+    // ==================================================
+    // TIMESTAMPS
+    // ==================================================
+
     if (status === "UNDER_REVIEW") {
       candidate.providerReviewedAt = new Date();
     }
@@ -267,6 +391,12 @@ exports.updatePlacementCandidateStatus = async (req, res) => {
         console.error("AUTO PLACEMENT BILLING ERROR:", billingError);
       }
     }
+
+    // ==================================================
+    // SEEKER PLACEMENT STATUS
+    //
+    // Internal only.
+    // ==================================================
 
     const seekerPlacement = await syncSeekerPlacementStatus(seekerId);
 
