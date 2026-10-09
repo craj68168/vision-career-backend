@@ -244,6 +244,13 @@ const seekerSchema = new mongoose.Schema(
       trim: true,
     },
 
+    name_kana: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 150,
+    },
+
     email: {
       type: String,
 

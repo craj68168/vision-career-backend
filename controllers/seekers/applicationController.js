@@ -10,7 +10,10 @@ const {
   calculatePlacementEligibility,
 } = require("../../utils/seekerProfileStatus");
 
-const { generateResumePdf } = require("../../services/resumeService");
+const {
+  generateResumePdf,
+  RESUME_AUDIENCES,
+} = require("../../services/resumeService");
 
 const { uploadBuffer } = require("../../services/storageService");
 
@@ -18,6 +21,7 @@ const { createStorageReference } = require("../../utils/storageReference");
 
 const {
   deleteApplicationResumeReference,
+
   sendApplicationResume,
 } = require("../../utils/applicationResumeStorage");
 
@@ -25,17 +29,21 @@ const { seekerMessage } = require("../../utils/seekerMessages");
 
 const {
   SEEKER_EMPLOYER_LABEL,
+
   toSeekerVisibleWorkLocation,
 } = require("../../utils/seekerPrivacy");
 
 const t = (req, en, ja) =>
   seekerMessage(req, {
     en,
+
     ja,
   });
 
 // ======================================================
+
 // START OF TODAY UTC
+
 // ======================================================
 
 const getTodayStartUTC = () => {
@@ -47,7 +55,9 @@ const getTodayStartUTC = () => {
 };
 
 // ======================================================
+
 // APPLICATION STEPS
+
 // ======================================================
 
 const APPLICATION_STEPS = [
@@ -56,26 +66,31 @@ const APPLICATION_STEPS = [
 
     label: "Application Submitted",
   },
+
   {
     key: "SENT_TO_PROVIDER",
 
     label: "Sent to Employer",
   },
+
   {
     key: "UNDER_REVIEW",
 
     label: "Under Review",
   },
+
   {
     key: "INTERVIEW",
 
     label: "Interview",
   },
+
   {
     key: "SELECTED",
 
     label: "Selected",
   },
+
   {
     key: "HIRED",
 
@@ -84,7 +99,9 @@ const APPLICATION_STEPS = [
 ];
 
 // ======================================================
+
 // GENERATE APPLICATION ID
+
 // ======================================================
 
 const generateApplicationId = () => {
@@ -92,7 +109,9 @@ const generateApplicationId = () => {
 };
 
 // ======================================================
+
 // STATUS TRACKING
+
 // ======================================================
 
 const getStatusTracking = (status) => {
@@ -112,6 +131,7 @@ const getStatusTracking = (status) => {
 
           state: "completed",
         },
+
         {
           key: "ADMIN_REJECTED",
 
@@ -139,6 +159,7 @@ const getStatusTracking = (status) => {
 
           state: "completed",
         },
+
         {
           key: "SENT_TO_PROVIDER",
 
@@ -146,6 +167,7 @@ const getStatusTracking = (status) => {
 
           state: "completed",
         },
+
         {
           key: "REJECTED",
 
@@ -193,7 +215,9 @@ const getStatusTracking = (status) => {
 };
 
 // ======================================================
+
 // SAFE SEEKER APPLICATION
+
 // ======================================================
 
 const toSeekerApplication = (application) => {
@@ -248,7 +272,9 @@ const toSeekerApplication = (application) => {
 };
 
 // ======================================================
+
 // SEEKER-SAFE VACANCY SUMMARY
+
 // ======================================================
 
 const toSeekerVacancySummary = (vacancy) => {
@@ -290,15 +316,25 @@ const toSeekerVacancySummary = (vacancy) => {
 };
 
 // ======================================================
+
 // BUILD FROZEN PROFESSIONAL SNAPSHOT
+
 //
+
 // Do not include:
+
 //
+
 // - email
+
 // - phone
+
 // - address
+
 // - current location
+
 // - private documents
+
 // ======================================================
 
 const buildProfileSnapshot = (seeker) => {
@@ -344,7 +380,9 @@ const buildProfileSnapshot = (seeker) => {
 };
 
 // ======================================================
+
 // APPLY FOR VACANCY
+
 // ======================================================
 
 exports.applyForVacancy = async (req, res) => {
@@ -522,6 +560,9 @@ exports.applyForVacancy = async (req, res) => {
       type: "application",
 
       applicationId,
+
+      // Employer receives the privacy-safe Japanese-style resume.
+      audience: RESUME_AUDIENCES.PROVIDER,
     });
 
     const uploadedResume = await uploadBuffer({
@@ -559,6 +600,7 @@ exports.applyForVacancy = async (req, res) => {
     });
 
     // Resume now belongs to DB record.
+
     applicationResumeReference = null;
 
     return res.status(201).json({
@@ -640,7 +682,9 @@ exports.applyForVacancy = async (req, res) => {
 };
 
 // ======================================================
+
 // GET MY APPLICATIONS
+
 // ======================================================
 
 exports.getMyApplications = async (req, res) => {
@@ -709,7 +753,9 @@ exports.getMyApplications = async (req, res) => {
 };
 
 // ======================================================
+
 // GET ONE APPLICATION
+
 // ======================================================
 
 exports.getMyApplicationById = async (req, res) => {
@@ -769,7 +815,9 @@ exports.getMyApplicationById = async (req, res) => {
 };
 
 // ======================================================
+
 // GET FROZEN APPLICATION RESUME
+
 // ======================================================
 
 exports.getMyApplicationResume = async (req, res) => {

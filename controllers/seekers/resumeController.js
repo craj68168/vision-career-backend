@@ -1,41 +1,42 @@
-const fs = require("fs");
-const path = require("path");
-
-const Seeker = require(
-  "../../models/seekers/seekerSchema",
-);
+const Seeker = require("../../models/seekers/seekerSchema");
 
 const {
   generateResumePdf,
-  GENERATED_RESUME_DIR,
-} = require(
-  "../../services/resumeService",
-);
+  RESUME_AUDIENCES,
+} = require("../../services/resumeService");
+
+const { uploadBuffer } = require("../../services/storageService");
+
+const { createStorageReference } = require("../../utils/storageReference");
+
+const {
+  deleteGeneratedResumeReference,
+  sendGeneratedResume,
+} = require("../../utils/generatedResumeStorage");
 
 const { seekerMessage } = require("../../utils/seekerMessages");
 
 const t = (req, en, ja) => seekerMessage(req, { en, ja });
 
 // ======================================================
-// GENERATE / REGENERATE RESUME
+// GENERATE / REGENERATE JAPANESE-STYLE RESUME
 //
 // POST /api/seekers/resume/generate
+//
+// New resumes are stored in private object storage.
+// Older local generated resumes remain supported by the
+// generatedResumeStorage compatibility helper.
 // ======================================================
 
-exports.generateResume = async (
-  req,
-  res,
-) => {
-  let newResumePath = null;
+exports.generateResume = async (req, res) => {
+  let newResumeReference = null;
 
   try {
-    const seekerId =
-      req.user.seeker_id;
+    const seekerId = req.user.seeker_id;
 
-    const seeker =
-      await Seeker.findOne({
-        seeker_id: seekerId,
-      });
+    const seeker = await Seeker.findOne({
+      seeker_id: seekerId,
+    });
 
     if (!seeker) {
       return res.status(404).json({
@@ -44,91 +45,66 @@ exports.generateResume = async (
       });
     }
 
-    // Keep previous generated resume
-    // so it can be deleted after successful generation.
-    const previousResume =
-      seeker.generated_resume_file;
+    const previousResume = seeker.generated_resume_file;
 
-    // Generate latest profile resume
-    const generatedResume =
-      await generateResumePdf(
-        seeker,
-      );
+    const generatedResume = await generateResumePdf(seeker, {
+      type: "profile",
+      audience: RESUME_AUDIENCES.INTERNAL,
+    });
 
-    newResumePath =
-      generatedResume.absolutePath;
+    const uploadedResume = await uploadBuffer({
+      buffer: generatedResume.buffer,
+      fileName: generatedResume.fileName,
+      mimeType: generatedResume.mimeType || "application/pdf",
+      folder: `seekers/${seekerId}/generated-resume`,
+    });
 
-    seeker.generated_resume_file =
-      generatedResume.relativePath;
+    newResumeReference = createStorageReference(uploadedResume.key);
+
+    seeker.generated_resume_file = newResumeReference;
 
     await seeker.save();
 
-    // ==================================================
-    // DELETE PREVIOUS PROFILE RESUME
-    // ==================================================
-    //
-    // Important:
-    // This deletes only the seeker's previous
-    // generated profile resume.
-    //
-    // Application-specific resumes will be stored
-    // separately and will NOT be deleted here.
-    // ==================================================
+    // The new reference now belongs to the database record.
+    const savedResumeReference = newResumeReference;
+    newResumeReference = null;
 
-    if (previousResume) {
-      const previousFileName =
-        path.basename(
-          previousResume,
-        );
-
-      const previousAbsolutePath =
-        path.join(
-          GENERATED_RESUME_DIR,
-          previousFileName,
-        );
-
-      if (
-        fs.existsSync(
-          previousAbsolutePath,
-        )
-      ) {
-        fs.unlinkSync(
-          previousAbsolutePath,
-        );
+    if (previousResume && previousResume !== savedResumeReference) {
+      try {
+        await deleteGeneratedResumeReference({
+          storedPath: previousResume,
+          seekerId,
+        });
+      } catch (cleanupError) {
+        // Generation succeeded. Old-file cleanup failure should not
+        // make the new resume unavailable to the seeker.
+        console.error("Previous generated resume cleanup error:", cleanupError);
       }
     }
 
     return res.status(200).json({
       success: true,
-
       message: t(
         req,
-        "Privacy-safe resume generated successfully.",
-        "個人情報を保護した履歴書を作成しました。",
+        "Japanese-style resume generated successfully.",
+        "日本式の履歴書を作成しました。",
       ),
-
       data: {
-        generated_resume_file:
-          seeker.generated_resume_file,
+        generated_resume_available: true,
       },
     });
   } catch (error) {
-    console.error(
-      "Generate resume error:",
-      error,
-    );
+    console.error("Generate resume error:", error);
 
-    // If PDF was generated but database save failed,
-    // remove the new file.
-    if (
-      newResumePath &&
-      fs.existsSync(
-        newResumePath,
-      )
-    ) {
-      fs.unlinkSync(
-        newResumePath,
-      );
+    if (newResumeReference) {
+      try {
+        await deleteGeneratedResumeReference({
+          storedPath: newResumeReference,
+          seekerId: req.user?.seeker_id,
+        });
+      } catch (cleanupError) {
+        console.error("Generated resume rollback cleanup error:", cleanupError);
+      }
     }
 
     return res.status(500).json({
@@ -148,18 +124,15 @@ exports.generateResume = async (
 // GET /api/seekers/resume/generated
 // ======================================================
 
-exports.getGeneratedResume = async (
-  req,
-  res,
-) => {
+exports.getGeneratedResume = async (req, res) => {
   try {
-    const seekerId =
-      req.user.seeker_id;
+    const seekerId = req.user.seeker_id;
 
-    const seeker =
-      await Seeker.findOne({
-        seeker_id: seekerId,
-      });
+    const seeker = await Seeker.findOne({
+      seeker_id: seekerId,
+    })
+      .select("seeker_id generated_resume_file")
+      .lean();
 
     if (!seeker) {
       return res.status(404).json({
@@ -168,9 +141,7 @@ exports.getGeneratedResume = async (
       });
     }
 
-    if (
-      !seeker.generated_resume_file
-    ) {
+    if (!seeker.generated_resume_file) {
       return res.status(404).json({
         success: false,
         message: t(
@@ -181,58 +152,43 @@ exports.getGeneratedResume = async (
       });
     }
 
-    const fileName =
-      path.basename(
-        seeker.generated_resume_file,
-      );
+    await sendGeneratedResume({
+      res,
+      storedPath: seeker.generated_resume_file,
+      seekerId,
+    });
 
-    const absolutePath =
-      path.join(
-        GENERATED_RESUME_DIR,
-        fileName,
-      );
+    return undefined;
+  } catch (error) {
+    console.error("Get generated resume error:", error);
 
-    if (
-      !fs.existsSync(
-        absolutePath,
-      )
-    ) {
-      return res.status(404).json({
-        success: false,
-        message: t(
-          req,
-          "Generated resume file not found.",
-          "自動生成履歴書ファイルが見つかりません。",
-        ),
-      });
+    if (res.headersSent) {
+      return undefined;
     }
 
-    res.setHeader(
-      "Content-Type",
-      "application/pdf",
-    );
+    const statusCode =
+      error.statusCode || error.$metadata?.httpStatusCode || 500;
 
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${fileName}"`,
-    );
-
-    return res.sendFile(
-      absolutePath,
-    );
-  } catch (error) {
-    console.error(
-      "Get generated resume error:",
-      error,
-    );
-
-    return res.status(500).json({
+    return res.status(statusCode).json({
       success: false,
-      message: t(
-        req,
-        "Failed to get generated resume.",
-        "自動生成履歴書の取得に失敗しました。",
-      ),
+      message:
+        statusCode === 404
+          ? t(
+              req,
+              "Generated resume file not found.",
+              "自動生成履歴書ファイルが見つかりません。",
+            )
+          : statusCode === 403
+            ? t(
+                req,
+                "Generated resume access denied.",
+                "自動生成履歴書にアクセスできません。",
+              )
+            : t(
+                req,
+                "Failed to get generated resume.",
+                "自動生成履歴書の取得に失敗しました。",
+              ),
     });
   }
 };

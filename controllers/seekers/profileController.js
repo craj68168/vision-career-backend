@@ -245,7 +245,11 @@ const parseJsonField = (value, fieldName, req) => {
     return JSON.parse(value);
   } catch {
     const error = new Error(
-      t(req, `Invalid ${fieldName} format`, `${fieldName}の形式が正しくありません`),
+      t(
+        req,
+        `Invalid ${fieldName} format`,
+        `${fieldName}の形式が正しくありません`,
+      ),
     );
 
     error.statusCode = 400;
@@ -348,7 +352,9 @@ exports.getProfile = async (req, res) => {
 
       message: t(
         req,
+
         "Failed to get seeker profile",
+
         "求職者プロフィールの取得に失敗しました",
       ),
     });
@@ -410,6 +416,8 @@ exports.updateProfile = async (req, res) => {
     const allowedFields = [
       "name",
 
+      "name_kana",
+
       "phone",
 
       "address",
@@ -462,7 +470,11 @@ exports.updateProfile = async (req, res) => {
         return res.status(400).json({
           status: "error",
 
-          message: t(req, "Skills must be an array", "スキルは配列で指定してください"),
+          message: t(
+            req,
+            "Skills must be an array",
+            "スキルは配列で指定してください",
+          ),
         });
       }
 
@@ -488,7 +500,11 @@ exports.updateProfile = async (req, res) => {
         return res.status(400).json({
           status: "error",
 
-          message: t(req, "Education must be an array", "学歴は配列で指定してください"),
+          message: t(
+            req,
+            "Education must be an array",
+            "学歴は配列で指定してください",
+          ),
         });
       }
 
@@ -516,7 +532,9 @@ exports.updateProfile = async (req, res) => {
 
           message: t(
             req,
+
             "Employment history must be an array",
+
             "職歴は配列で指定してください",
           ),
         });
@@ -552,7 +570,9 @@ exports.updateProfile = async (req, res) => {
 
       errorMessage: t(
         req,
+
         "Profile photo must be JPG, JPEG, PNG or WEBP",
+
         "プロフィール写真はJPG、JPEG、PNG、WEBP形式でアップロードしてください",
       ),
     });
@@ -572,7 +592,9 @@ exports.updateProfile = async (req, res) => {
 
       errorMessage: t(
         req,
+
         "Resume must be a PDF, DOC or DOCX file",
+
         "履歴書はPDF、DOC、DOCX形式でアップロードしてください",
       ),
     });
@@ -593,7 +615,9 @@ exports.updateProfile = async (req, res) => {
 
         errorMessage: t(
           req,
+
           "Documents must be JPG, JPEG, PNG, GIF, WEBP, PDF, DOC or DOCX files",
+
           "書類はJPG、JPEG、PNG、GIF、WEBP、PDF、DOC、DOCX形式でアップロードしてください",
         ),
       });
@@ -622,7 +646,9 @@ exports.updateProfile = async (req, res) => {
 
           message: t(
             req,
+
             "other_documents_meta must be an array",
+
             "書類メタデータは配列で指定してください",
           ),
         });
@@ -638,7 +664,9 @@ exports.updateProfile = async (req, res) => {
 
         message: t(
           req,
+
           "Document metadata count must match uploaded document count",
+
           "書類メタデータの数はアップロードした書類数と一致する必要があります",
         ),
       });
@@ -677,7 +705,9 @@ exports.updateProfile = async (req, res) => {
 
           message: t(
             req,
+
             "remove_document_ids must be an array",
+
             "削除する書類IDは配列で指定してください",
           ),
         });
@@ -712,7 +742,9 @@ exports.updateProfile = async (req, res) => {
 
         message: t(
           req,
+
           "No profile information provided",
+
           "プロフィール情報が入力されていません",
         ),
       });
@@ -861,7 +893,9 @@ exports.updateProfile = async (req, res) => {
 
       message: t(
         req,
+
         "Profile updated successfully",
+
         "プロフィールを更新しました",
       ),
 
@@ -892,7 +926,9 @@ exports.updateProfile = async (req, res) => {
 
         message: t(
           req,
+
           "Please check your profile information and try again.",
+
           "プロフィール情報を確認してもう一度お試しください。",
         ),
       });
@@ -903,7 +939,9 @@ exports.updateProfile = async (req, res) => {
 
       message: t(
         req,
+
         "Failed to update seeker profile",
+
         "求職者プロフィールの更新に失敗しました",
       ),
     });

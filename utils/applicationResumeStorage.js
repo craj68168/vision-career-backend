@@ -23,7 +23,26 @@ const createStorageError = (message, statusCode) => {
 };
 
 // ======================================================
-// EXPECTED SUPABASE PREFIX
+// COMMON PRIVATE FILE HEADERS
+// ======================================================
+
+const setPrivateResumeHeaders = (res) => {
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+
+  res.setHeader("Pragma", "no-cache");
+
+  res.setHeader("X-Content-Type-Options", "nosniff");
+};
+
+// ======================================================
+// EXPECTED STORAGE PREFIX
+//
+// Every new frozen application resume must live inside:
+//
+// applications/APP-XXXXXXXX/resume/...
+//
+// This prevents one application from reading another
+// application's resume through a forged storage path.
 // ======================================================
 
 const getApplicationResumePrefix = (applicationId) => {
@@ -35,7 +54,7 @@ const getApplicationResumePrefix = (applicationId) => {
 };
 
 // ======================================================
-// VALIDATE SUPABASE REFERENCE
+// VALIDATE PRIVATE STORAGE REFERENCE
 // ======================================================
 
 const getValidatedStorageKey = (storedPath, applicationId) => {
@@ -57,8 +76,12 @@ const getValidatedStorageKey = (storedPath, applicationId) => {
 // ======================================================
 // LEGACY APPLICATION RESUME PATH
 //
-// Old records use:
+// Older records may still use:
+//
 // application-resumes/APP-XXXXXXXX.pdf
+//
+// Keep this compatibility until all old application
+// resumes have been migrated or are no longer needed.
 // ======================================================
 
 const getLegacyApplicationResumePath = (storedPath, applicationId) => {
@@ -97,7 +120,14 @@ const getLegacyApplicationResumePath = (storedPath, applicationId) => {
 };
 
 // ======================================================
-// SEND SUPABASE APPLICATION RESUME
+// SEND PRIVATE STORAGE APPLICATION RESUME
+//
+// Supports:
+//
+// storage://applications/APP-XXXXXXXX/resume/...
+//
+// The browser never receives the raw storage key.
+// The backend retrieves and streams the PDF.
 // ======================================================
 
 const sendStorageResume = async ({ res, storedPath, applicationId }) => {
@@ -107,14 +137,32 @@ const sendStorageResume = async ({ res, storedPath, applicationId }) => {
 
   res.setHeader("Content-Type", object.ContentType || "application/pdf");
 
+  // ====================================================
+  // PRIVATE / SECURITY HEADERS
+  // ====================================================
+
+  setPrivateResumeHeaders(res);
+
+  // ====================================================
+  // CONTENT LENGTH
+  // ====================================================
+
   if (object.ContentLength !== undefined) {
     res.setHeader("Content-Length", String(object.ContentLength));
   }
+
+  // ====================================================
+  // INLINE PDF
+  // ====================================================
 
   res.setHeader(
     "Content-Disposition",
     `inline; filename*=UTF-8''${encodeURIComponent(`${applicationId}.pdf`)}`,
   );
+
+  // ====================================================
+  // AWS SDK V3 BYTE ARRAY BODY
+  // ====================================================
 
   if (object.Body && typeof object.Body.transformToByteArray === "function") {
     const bytes = await object.Body.transformToByteArray();
@@ -124,8 +172,14 @@ const sendStorageResume = async ({ res, storedPath, applicationId }) => {
     return;
   }
 
+  // ====================================================
+  // NODE STREAM BODY
+  // ====================================================
+
   if (object.Body && typeof object.Body.pipe === "function") {
     object.Body.on("error", (error) => {
+      console.error("Application resume stream error:", error);
+
       if (!res.headersSent) {
         res.status(500).json({
           success: false,
@@ -149,6 +203,10 @@ const sendStorageResume = async ({ res, storedPath, applicationId }) => {
 
 // ======================================================
 // SEND LEGACY LOCAL APPLICATION RESUME
+//
+// Supports:
+//
+// application-resumes/APP-XXXXXXXX.pdf
 // ======================================================
 
 const sendLegacyResume = async ({ res, storedPath, applicationId }) => {
@@ -169,12 +227,18 @@ const sendLegacyResume = async ({ res, storedPath, applicationId }) => {
 
   res.setHeader("Content-Type", "application/pdf");
 
+  // ====================================================
+  // PRIVATE / SECURITY HEADERS
+  // ====================================================
+
+  setPrivateResumeHeaders(res);
+
   res.setHeader(
     "Content-Disposition",
     `inline; filename*=UTF-8''${encodeURIComponent(`${applicationId}.pdf`)}`,
   );
 
-  res.sendFile(absolutePath);
+  return res.sendFile(absolutePath);
 };
 
 // ======================================================
@@ -182,11 +246,14 @@ const sendLegacyResume = async ({ res, storedPath, applicationId }) => {
 //
 // Supports:
 //
-// NEW
+// NEW:
 // storage://applications/APP-XXXXXXXX/resume/...
 //
-// LEGACY
+// LEGACY:
 // application-resumes/APP-XXXXXXXX.pdf
+//
+// This helper only streams a resume after the caller
+// has already authenticated and authorized the user.
 // ======================================================
 
 const sendApplicationResume = async ({ res, storedPath, applicationId }) => {
@@ -197,6 +264,10 @@ const sendApplicationResume = async ({ res, storedPath, applicationId }) => {
   if (!applicationId) {
     throw createStorageError("Application ID is required.", 400);
   }
+
+  // ====================================================
+  // NEW PRIVATE STORAGE
+  // ====================================================
 
   if (isStorageReference(storedPath)) {
     await sendStorageResume({
@@ -210,6 +281,10 @@ const sendApplicationResume = async ({ res, storedPath, applicationId }) => {
     return;
   }
 
+  // ====================================================
+  // LEGACY LOCAL STORAGE
+  // ====================================================
+
   await sendLegacyResume({
     res,
 
@@ -222,10 +297,13 @@ const sendApplicationResume = async ({ res, storedPath, applicationId }) => {
 // ======================================================
 // DELETE APPLICATION RESUME REFERENCE
 //
-// Primarily used when application creation fails after
-// the new frozen resume has already reached Supabase.
+// Used mainly when application creation fails after the
+// frozen resume has already been uploaded.
 //
-// Also supports legacy local files for future cleanup.
+// Supports both:
+//
+// - private object storage
+// - old local application resumes
 // ======================================================
 
 const deleteApplicationResumeReference = async ({
@@ -236,6 +314,10 @@ const deleteApplicationResumeReference = async ({
     return;
   }
 
+  // ==================================================
+  // PRIVATE OBJECT STORAGE
+  // ==================================================
+
   if (isStorageReference(storedPath)) {
     const key = getValidatedStorageKey(storedPath, applicationId);
 
@@ -243,6 +325,10 @@ const deleteApplicationResumeReference = async ({
 
     return;
   }
+
+  // ==================================================
+  // LEGACY LOCAL FILE
+  // ==================================================
 
   const absolutePath = getLegacyApplicationResumePath(
     storedPath,
